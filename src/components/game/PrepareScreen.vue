@@ -80,8 +80,7 @@ const modeOptions = computed(() => [
       <span class="dec-dot dot-b"></span>
       <span class="dec-dot dot-c"></span>
     </div>
-    <div class="mode-shell">
-      <div class="mode-grid">
+    <div class="mode-grid">
         <button
           v-for="option in modeOptions"
           :key="option.value"
@@ -110,7 +109,6 @@ const modeOptions = computed(() => [
             <span class="mode-badge">{{ option.value }}P</span>
           </div>
         </button>
-      </div>
     </div>
   </section>
 </template>
@@ -147,8 +145,8 @@ const modeOptions = computed(() => [
 }
 
 .dec-orbit {
-  border: 2px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 0 40px rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.03);
 }
 
 .orbit-a {
@@ -168,8 +166,8 @@ const modeOptions = computed(() => [
 .dec-cloud {
   background: radial-gradient(
     circle,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0.04) 70%,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.03) 70%,
     transparent 72%
   );
   filter: blur(2px);
@@ -192,8 +190,8 @@ const modeOptions = computed(() => [
 .dec-dot {
   width: 12px;
   height: 12px;
-  background: rgba(255, 255, 255, 0.6);
-  box-shadow: 0 0 18px rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.25);
 }
 
 .dot-a {
@@ -209,27 +207,6 @@ const modeOptions = computed(() => [
   right: 14%;
 }
 
-.mode-shell {
-  position: relative;
-  z-index: 1;
-  width: min(980px, calc(100% - 12px));
-  margin: 0 auto;
-  padding: 16px;
-  border-radius: 32px;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.24),
-      rgba(255, 255, 255, 0.08)
-    ),
-    rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow:
-    0 26px 72px rgba(0, 49, 104, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42);
-  backdrop-filter: blur(8px);
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -243,6 +220,9 @@ const modeOptions = computed(() => [
 }
 
 .mode-grid {
+  position: relative;
+  z-index: 1;
+  width: 100%;
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -504,12 +484,6 @@ const modeOptions = computed(() => [
   .mode-grid {
     grid-template-columns: 1fr 1fr;
     gap: 12px;
-  }
-
-  .mode-shell {
-    width: min(100%, calc(100% - 8px));
-    padding: 12px;
-    border-radius: 26px;
   }
 
   .select-card {
