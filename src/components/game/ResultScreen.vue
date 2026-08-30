@@ -77,7 +77,7 @@ const { t } = useI18n()
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(7, 12, 24, 0);
+  background: rgba(255, 255, 255, 0.22);
   backdrop-filter: blur(12px);
   pointer-events: auto;
 }
@@ -92,13 +92,25 @@ const { t } = useI18n()
   margin: 0;
   padding: 32px 24px 26px;
   min-height: 360px;
-  background-image: url('/victory_bg.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  background-blend-mode: overlay;
+  background:
+    radial-gradient(
+      circle 300px at 50% 26%,
+      rgba(255, 205, 90, 0.45),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle 190px at 16% 16%,
+      rgba(255, 224, 130, 0.3),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle 190px at 84% 20%,
+      rgba(255, 255, 255, 0.9),
+      transparent 70%
+    ),
+    linear-gradient(165deg, #ffffff 0%, #fff3d7 100%);
   border-radius: 28px;
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 28px 70px rgba(41, 121, 196, 0.22);
   overflow: hidden;
 }
 
@@ -127,13 +139,13 @@ const { t } = useI18n()
   margin: 0;
   margin-bottom: 18px;
   text-align: center;
-  color: #edf2f7;
+  color: #33527a;
   font-size: 1rem;
   opacity: 0.92;
 }
 
 .winner-tag strong {
-  color: #ffffff;
+  color: #17406f;
 }
 
 .actions {
@@ -148,8 +160,8 @@ const { t } = useI18n()
 .action-button {
   border: 0;
   border-radius: 240px;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: rgba(41, 121, 196, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(41, 121, 196, 0.14);
   cursor: pointer;
   transition:
     transform 0.18s ease,
@@ -167,10 +179,10 @@ const { t } = useI18n()
 
 .action-button:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(41, 121, 196, 0.14);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 14px 28px rgba(0, 0, 0, 0.12);
+    inset 0 0 0 1px rgba(41, 121, 196, 0.2),
+    0 14px 28px rgba(41, 121, 196, 0.18);
 }
 
 .action-button:active {

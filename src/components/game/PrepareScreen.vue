@@ -81,34 +81,34 @@ const modeOptions = computed(() => [
       <span class="dec-dot dot-c"></span>
     </div>
     <div class="mode-grid">
-        <button
-          v-for="option in modeOptions"
-          :key="option.value"
-          :class="[
-            'select-card',
-            `card-${option.avatars.length}`,
-            { active: props.mode === option.value },
-          ]"
-          type="button"
-          :aria-label="t('playerMode', { count: option.value })"
-          :style="{ '--accent': option.accent }"
-          @click="selectMode(option.value)"
-        >
-          <div class="card-topbar"></div>
-          <div class="card-glow"></div>
-          <div class="avatar-stack" :class="`stack-${option.avatars.length}`">
-            <img
-              v-for="avatar in option.avatars"
-              :key="avatar.src"
-              class="avatar-icon"
-              :src="avatar.src"
-              :alt="avatar.alt"
-            />
-          </div>
-          <div class="card-footer">
-            <span class="mode-badge">{{ option.value }}P</span>
-          </div>
-        </button>
+      <button
+        v-for="option in modeOptions"
+        :key="option.value"
+        :class="[
+          'select-card',
+          `card-${option.avatars.length}`,
+          { active: props.mode === option.value },
+        ]"
+        type="button"
+        :aria-label="t('playerMode', { count: option.value })"
+        :style="{ '--accent': option.accent }"
+        @click="selectMode(option.value)"
+      >
+        <div class="card-topbar"></div>
+        <div class="card-glow"></div>
+        <div class="avatar-stack" :class="`stack-${option.avatars.length}`">
+          <img
+            v-for="avatar in option.avatars"
+            :key="avatar.src"
+            class="avatar-icon"
+            :src="avatar.src"
+            :alt="avatar.alt"
+          />
+        </div>
+        <div class="card-footer">
+          <span class="mode-badge">{{ option.value }}P</span>
+        </div>
+      </button>
     </div>
   </section>
 </template>
@@ -135,6 +135,11 @@ const modeOptions = computed(() => [
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+  background: radial-gradient(
+    ellipse 55% 46% at 50% 48%,
+    rgba(255, 236, 180, 0.42),
+    transparent 70%
+  );
 }
 
 .dec-orbit,
@@ -145,8 +150,8 @@ const modeOptions = computed(() => [
 }
 
 .dec-orbit {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 40px rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.35);
 }
 
 .orbit-a {
@@ -166,8 +171,8 @@ const modeOptions = computed(() => [
 .dec-cloud {
   background: radial-gradient(
     circle,
-    rgba(255, 255, 255, 0.12),
-    rgba(255, 255, 255, 0.03) 70%,
+    rgba(255, 255, 255, 0.68),
+    rgba(255, 255, 255, 0.22) 70%,
     transparent 72%
   );
   filter: blur(2px);
@@ -190,8 +195,8 @@ const modeOptions = computed(() => [
 .dec-dot {
   width: 12px;
   height: 12px;
-  background: rgba(255, 255, 255, 0.4);
-  box-shadow: 0 0 18px rgba(255, 255, 255, 0.25);
+  background: rgba(255, 205, 90, 0.9);
+  box-shadow: 0 0 18px rgba(255, 190, 80, 0.55);
 }
 
 .dot-a {

@@ -200,20 +200,14 @@ const difficultyOptions = computed(() => [
   width: 50px;
   height: 50px;
   min-height: 50px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.95);
   border-radius: 14px;
   padding: 0;
   overflow: hidden;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.18),
-      rgba(255, 255, 255, 0.04)
-    ),
-    rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.85);
   box-shadow:
-    0 8px 18px rgba(0, 31, 61, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+    0 8px 18px rgba(41, 121, 196, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .preset-image {
@@ -234,9 +228,9 @@ const difficultyOptions = computed(() => [
   inset: 4px;
   border-radius: 10px;
   background:
-    linear-gradient(180deg, rgba(6, 18, 36, 0.08), rgba(6, 18, 36, 0.16)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    linear-gradient(180deg, rgba(6, 18, 36, 0.03), rgba(6, 18, 36, 0.1)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
 .preset-pill::after {
@@ -299,7 +293,9 @@ const difficultyOptions = computed(() => [
   border: none;
   border-radius: 22px;
   background: transparent;
-  box-shadow: none;
+  box-shadow:
+    0 30px 80px rgba(41, 121, 196, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.4);
   backdrop-filter: none;
   width: 100%;
   height: 100%;
