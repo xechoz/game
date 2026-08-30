@@ -1,3 +1,11 @@
+/**
+ * 轻量 i18n（无第三方依赖）
+ *
+ * - 支持 zh / en，按浏览器语言自动选择
+ * - 消息模板支持 {param} 占位符替换
+ * - t(key, params) 在任何地方可用；组件内可用 useI18n() 拿响应式 locale
+ * - 词条文件：src/locales/zh.json / en.json
+ */
 import { computed, reactive, type ComputedRef } from 'vue'
 
 import enMessages from './locales/en.json'
@@ -18,6 +26,7 @@ const messages: Record<SupportedLocale, MessageCatalog> = {
   zh: zhMessages,
 }
 
+// 根据浏览器语言偏好选择初始 locale（zh 优先，其次 en）
 function getBrowserLocale(): SupportedLocale {
   if (typeof navigator === 'object' && navigator) {
     const languages = Array.isArray(navigator.languages)
@@ -35,6 +44,7 @@ function getBrowserLocale(): SupportedLocale {
 
 const state = reactive({ locale: getBrowserLocale() as SupportedLocale })
 
+// 把消息模板中的 {key} 占位符替换为参数值
 function replaceParams(message: string, params?: MessageParams): string {
   if (!params) return message
 
@@ -43,6 +53,7 @@ function replaceParams(message: string, params?: MessageParams): string {
   }, message)
 }
 
+// 取当前语言的词条（缺词条时回退英文，再回退 key 本身）
 export function t(key: string, params?: MessageParams): string {
   const localeMessages = messages[state.locale] ?? messages.en
   const template = localeMessages[key] ?? messages.en[key] ?? key

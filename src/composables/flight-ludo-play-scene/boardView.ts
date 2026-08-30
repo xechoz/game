@@ -4,7 +4,9 @@ import type { Point } from './types'
 // It turns the raw geometric track points into a small set of visual anchors
 // that are useful for numbering, labels, and route explanations.
 // The game rules do not depend on these anchors.
+// 本模块仅供 UI 使用：把跑道原始点集提炼成少量视觉锚点（编号/标注用），规则层不依赖。
 
+// 从点集中选出离 target 最近的点（锚点提取）
 function pickClosestPoint(points: Point[], target: Point) {
   let bestPoint = points[0] ?? target
   let bestDistance = Number.POSITIVE_INFINITY

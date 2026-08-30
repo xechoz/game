@@ -1,3 +1,14 @@
+/**
+ * 回合控制器（turnController）
+ *
+ * 职责：
+ *  - 维护回合流转状态：isTurnTransitioning（回合切换中）、diceHandoffHiding（交接隐藏骰子）
+ *  - 自动托管时间线：定时驱动 摇骰 → 选择棋子 → 移动 的完整流程（playAutoTurn）
+ *  - 回合推进调度：移动/跳过后 delay 一段时间再 advanceTurn
+ *  - 可走棋子的呼吸高亮动画（legalPulse）
+ *
+ * 只负责"编排时机"，具体摇骰/移动动作通过注入的 handleRoll / handleMove 委托出去。
+ */
 import { ref, type ComputedRef, type Ref } from 'vue'
 
 import {
@@ -25,8 +36,11 @@ type TurnControllerOptions = {
 }
 
 export function createTurnController(options: TurnControllerOptions) {
+  // 可走棋子的脉冲相位（0~1，驱动渲染层呼吸发光）
   const legalPulse = ref(0)
+  // 回合切换动画进行中（此期间禁止摇骰/移动，防止状态错乱）
   const isTurnTransitioning = ref(false)
+  // 回合交接时短暂隐藏骰子，营造"传给下家"的效果
   const diceHandoffHiding = ref(false)
 
   let autoTimer: number = -1
@@ -34,6 +48,7 @@ export function createTurnController(options: TurnControllerOptions) {
   let turnAdvanceTimer: number = -1
   let turnAccentFrameId: number = -1
 
+  // 是否真人回合（humanControlled 由 mode 决定）
   function isHumanTurn() {
     return options.currentPlayer.value.humanControlled
   }
@@ -68,6 +83,10 @@ export function createTurnController(options: TurnControllerOptions) {
     stopTurnAccentAnimation()
   }
 
+  /**
+   * 安排一次回合推进：delay 毫秒后调用规则层 advanceTurn 轮到下家。
+   * 期间置 isTurnTransitioning=true 锁住交互；到期后若轮到非真人且开启托管则自动继续。
+   */
   function scheduleTurnAdvance(delay = 2000) {
     if (!options.isPlayPageActive() || options.game.value.winnerIndex !== -1)
       return
@@ -96,6 +115,7 @@ export function createTurnController(options: TurnControllerOptions) {
     turnAdvanceTimer = timer
   }
 
+  // 条件满足时启动"可走棋子呼吸高亮"动画循环（requestAnimationFrame 驱动 legalPulse）
   function syncTurnAccentAnimation() {
     stopTurnAccentAnimation()
 
@@ -131,11 +151,10 @@ export function createTurnController(options: TurnControllerOptions) {
     turnAccentFrameId = window.requestAnimationFrame(tick)
   }
 
+  // 真人玩家可自动代走的场景：掷到 6 且没有棋子在跑道上（只能起飞）、
+  // 或只剩唯一合法棋子，此时无需等待玩家点击，直接自动走
   function getHumanAutoMovePieceId() {
-    if (
-      options.game.value.dice === 0 ||
-      options.game.value.winnerIndex !== -1
-    )
+    if (options.game.value.dice === 0 || options.game.value.winnerIndex !== -1)
       return ''
     const legalIds = options.legalPieces.value
     if (legalIds.length === 0) return ''
@@ -144,10 +163,11 @@ export function createTurnController(options: TurnControllerOptions) {
       getPlayerTrackCount(options.currentPlayer.value) === 0 &&
       options.game.value.dice === 6
     )
-      return legalIds[0] ?? ""
+      return legalIds[0] ?? ''
     return ''
   }
 
+  // 安排一次"自动回合"（延迟后进入 playAutoTurn 编排流程）
   function scheduleAutoTurn(delay = 180) {
     if (!options.isPlayPageActive() || options.game.value.winnerIndex !== -1)
       return
@@ -193,6 +213,10 @@ export function createTurnController(options: TurnControllerOptions) {
     autoMoveTimer = timer
   }
 
+  // 自动回合编排：
+  //  - 未掷骰 → 非真人回合自动摇骰
+  //  - 已掷骰 → 选择棋子（真人走 getHumanAutoMovePieceId，托管走 chooseAutoMovePieceId）
+  //  - 无子可走 → 自动推进回合
   function playAutoTurn() {
     if (
       !options.isPlayPageActive() ||

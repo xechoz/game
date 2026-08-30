@@ -1,3 +1,20 @@
+/**
+ * PIXI 渲染层（boardRenderer）
+ *
+ * 职责：把 GameState + 各控制器的动画状态渲染成 PIXI 场景，并绑定交互。
+ *
+ * 渲染模型：
+ *  - 场景按名字分两个主层：STATIC_LAYER（静态棋盘，仅当棋盘配置变化时重建）
+ *   和 DYNAMIC_LAYER（棋子/骰子/效果，每次 renderScene 全量 diff 同步）
+ *  - 所有节点用固定 name 标识，按 name 查找复用或重建（简易"命令式 diff"）
+ *  - 棋子组（pieceGroup）缓存在 sceneRenderStates 的 WeakMap 里，跨帧复用
+ *  - 交互：可走棋子 / 可摇骰的基地块绑定 pointerdown → onMove / onRoll
+ *
+ * 对外只暴露三个入口：
+ *  - renderPlayScene()  全量渲染
+ *  - syncDiceOnly()     骰子动画高频轻量同步
+ *  - resolvePiecePoint() 把 规则层位置(progress) 映射为像素坐标
+ */
 import * as PIXI from 'pixi.js'
 
 import {
@@ -74,7 +91,14 @@ type PieceRenderInfo = {
 
 type DiceSceneOptions = Pick<
   RenderPlaySceneOptions,
-  'app' | 'scene' | 'game' | 'autoPlayMode' | 'dice' | 'move' | 'turn' | 'onRoll'
+  | 'app'
+  | 'scene'
+  | 'game'
+  | 'autoPlayMode'
+  | 'dice'
+  | 'move'
+  | 'turn'
+  | 'onRoll'
 >
 
 export function hexToNumber(color: string) {
@@ -93,6 +117,7 @@ function getRippleRings(phase: number, count = 2): RippleRing[] {
   })
 }
 
+// 骰子 6 个面的点数布局（以骰子中心为原点的归一化坐标）
 const DIE_PIP_GRID = {
   left: -0.24,
   center: 0,
@@ -136,6 +161,7 @@ const DIE_PIP_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   ],
 }
 
+// —— 节点命名约定：全部场景节点用固定 label 命名，按名查找复用 ——
 const OVERLAY_BASES_LAYER_NAME = 'flight-ludo-overlay-bases-layer'
 const OVERLAY_EFFECTS_LAYER_NAME = 'flight-ludo-overlay-effects-layer'
 const OVERLAY_DICE_LAYER_NAME = 'flight-ludo-overlay-dice-layer'
@@ -154,6 +180,7 @@ const DICE_SETTLE_FLASH_NAME = 'flight-ludo-dice-settle-flash'
 const DICE_PIP_NAME_PREFIX = 'flight-ludo-dice-pip'
 const DICE_IDLE_RIPPLE_NAME = 'flight-ludo-dice-idle-ripple'
 
+// 按 name 查找子节点；不存在则新建 Graphics（并可选插到指定层级），实现节点复用
 function getOrCreateGraphicsChild(
   container: PIXI.Container,
   name: string,
@@ -161,7 +188,10 @@ function getOrCreateGraphicsChild(
 ) {
   const existing = findNamedChild(container, name)
   if (existing instanceof PIXI.Graphics) {
-    if (typeof childIndex === 'number' && container.getChildIndex(existing) !== childIndex) {
+    if (
+      typeof childIndex === 'number' &&
+      container.getChildIndex(existing) !== childIndex
+    ) {
       container.setChildIndex(existing, childIndex)
     }
     return existing
@@ -203,6 +233,7 @@ function getOrCreateTextChild(
   return text
 }
 
+// 同步骰子面：按当前点数绘制圆角方块 + 点数圆点 + 高光 + 阴影
 function syncDiceFaceGraphic(
   container: PIXI.Container,
   options: {
@@ -225,7 +256,11 @@ function syncDiceFaceGraphic(
       ? 0.92
       : 0.88
 
-  const shadow = getOrCreateGraphicsChild(container, DICE_FACE_DROP_SHADOW_NAME, 0)
+  const shadow = getOrCreateGraphicsChild(
+    container,
+    DICE_FACE_DROP_SHADOW_NAME,
+    0,
+  )
   shadow.clear()
   shadow
     .roundRect(
@@ -260,7 +295,10 @@ function syncDiceFaceGraphic(
     )
     .fill({ color: 0xffffff, alpha: 0.26 })
 
-  const idleBackdrop = getOrCreateGraphicsChild(container, DICE_IDLE_BACKDROP_NAME)
+  const idleBackdrop = getOrCreateGraphicsChild(
+    container,
+    DICE_IDLE_BACKDROP_NAME,
+  )
   idleBackdrop.visible = options.isIdle
   idleBackdrop.clear()
   if (options.isIdle) {
@@ -269,19 +307,23 @@ function syncDiceFaceGraphic(
       .fill({ color: options.color, alpha: 0.08 + options.idlePulse * 0.05 })
   }
 
-  const questionMark = getOrCreateTextChild(container, DICE_QUESTION_MARK_NAME, () => {
-    const text = new PIXI.Text({
-      text: '?',
-      style: {
-        fill: options.color,
-        fontFamily: 'Trebuchet MS',
-        fontSize: faceSize * 0.42,
-        fontWeight: '800',
-      },
-    })
-    text.anchor.set(0.5)
-    return text
-  })
+  const questionMark = getOrCreateTextChild(
+    container,
+    DICE_QUESTION_MARK_NAME,
+    () => {
+      const text = new PIXI.Text({
+        text: '?',
+        style: {
+          fill: options.color,
+          fontFamily: 'Trebuchet MS',
+          fontSize: faceSize * 0.42,
+          fontWeight: '800',
+        },
+      })
+      text.anchor.set(0.5)
+      return text
+    },
+  )
   questionMark.visible = options.isIdle
   questionMark.text = '?'
   questionMark.position.set(0, -faceSize * 0.02)
@@ -311,12 +353,25 @@ function syncDiceFaceGraphic(
   }
 }
 
+// 获取/创建动态层下的三个叠加层：基地块 / 效果 / 骰子（层级顺序固定）
 function getOverlayLayers(scene: PIXI.Container) {
   const dynamicLayer = getOrCreateSceneLayer(scene, DYNAMIC_LAYER_NAME)
-  const overlayLayer = getOrCreateSceneLayer(dynamicLayer, DYNAMIC_OVERLAY_LAYER_NAME)
-  const overlayBasesLayer = getOrCreateSceneLayer(overlayLayer, OVERLAY_BASES_LAYER_NAME)
-  const overlayEffectsLayer = getOrCreateSceneLayer(overlayLayer, OVERLAY_EFFECTS_LAYER_NAME)
-  const overlayDiceLayer = getOrCreateSceneLayer(overlayLayer, OVERLAY_DICE_LAYER_NAME)
+  const overlayLayer = getOrCreateSceneLayer(
+    dynamicLayer,
+    DYNAMIC_OVERLAY_LAYER_NAME,
+  )
+  const overlayBasesLayer = getOrCreateSceneLayer(
+    overlayLayer,
+    OVERLAY_BASES_LAYER_NAME,
+  )
+  const overlayEffectsLayer = getOrCreateSceneLayer(
+    overlayLayer,
+    OVERLAY_EFFECTS_LAYER_NAME,
+  )
+  const overlayDiceLayer = getOrCreateSceneLayer(
+    overlayLayer,
+    OVERLAY_DICE_LAYER_NAME,
+  )
 
   overlayLayer.setChildIndex(overlayBasesLayer, 0)
   overlayLayer.setChildIndex(overlayEffectsLayer, 1)
@@ -331,6 +386,7 @@ function getOverlayLayers(scene: PIXI.Container) {
   }
 }
 
+// 同步棋盘中央的骰子：中心点、可摇骰判定、涟漪、点数面、阴影与各类缩放/旋转动画叠加
 function syncDiceOverlay(options: DiceSceneOptions) {
   const { overlayDiceLayer } = getOverlayLayers(options.scene)
   const { width, height } = options.app.screen
@@ -419,10 +475,10 @@ function syncDiceOverlay(options: DiceSceneOptions) {
       0,
       fittedHeight * (0.36 + options.dice.diceLandingSquash * 0.08),
       fittedWidth *
-      0.24 *
-      (1 +
-        options.dice.diceLandingSquash * 0.45 +
-        (options.dice.isRolling ? 0.06 : 0)),
+        0.24 *
+        (1 +
+          options.dice.diceLandingSquash * 0.45 +
+          (options.dice.isRolling ? 0.06 : 0)),
       fittedHeight * 0.08 * (1 + options.dice.diceLandingSquash * 0.35),
     )
     .fill({
@@ -465,15 +521,18 @@ function syncDiceOverlay(options: DiceSceneOptions) {
   const settleFlashAlpha =
     !options.dice.isRolling && !isIdleDiceState
       ? Math.max(
-        0,
-        Math.min(
-          0.18,
-          options.dice.diceLandingSquash * 0.32 +
-          options.dice.diceLandingLift * 0.004,
-        ),
-      )
+          0,
+          Math.min(
+            0.18,
+            options.dice.diceLandingSquash * 0.32 +
+              options.dice.diceLandingLift * 0.004,
+          ),
+        )
       : 0
-  const settleFlash = getOrCreateGraphicsChild(diceGroup, DICE_SETTLE_FLASH_NAME)
+  const settleFlash = getOrCreateGraphicsChild(
+    diceGroup,
+    DICE_SETTLE_FLASH_NAME,
+  )
   settleFlash.visible = settleFlashAlpha > 0.001
   settleFlash.clear()
   if (settleFlash.visible) {
@@ -489,9 +548,7 @@ function syncDiceOverlay(options: DiceSceneOptions) {
   }
 
   const diceScaleBoost =
-    1 +
-    options.dice.diceIdlePulse * 0.05 +
-    (options.dice.isRolling ? 0.05 : 0)
+    1 + options.dice.diceIdlePulse * 0.05 + (options.dice.isRolling ? 0.05 : 0)
   const landingScaleX =
     1 +
     options.dice.diceLandingSquash * 0.34 +
@@ -512,9 +569,7 @@ function syncDiceOverlay(options: DiceSceneOptions) {
   const spinScaleY =
     options.dice.diceSpinScale *
     diceScaleBoost *
-    (options.dice.isRolling
-      ? 1 + (1 - options.dice.diceSpinFlip) * 0.22
-      : 1) *
+    (options.dice.isRolling ? 1 + (1 - options.dice.diceSpinFlip) * 0.22 : 1) *
     landingScaleY
   diceGroup.position.set(
     0,
@@ -528,6 +583,8 @@ export function syncDiceOnly(options: DiceSceneOptions) {
   syncDiceOverlay(options)
 }
 
+// 把规则层棋子位置（progress）解析为棋盘像素坐标：
+// base → 停机坪槽位；track → 跑道格中心；home/finished → 终点跑道槽位
 export function resolvePiecePoint(
   layout: BoardLayout,
   boardPreset: BoardPreset,
@@ -578,6 +635,7 @@ export function getPlayerByPieceId(state: GameState, pieceId: string) {
   )
 }
 
+// 堆叠偏移模式：同格多颗棋子时按预设模式错开排布（最多 13 颗）
 export function getStackOffsets(count: number, step: number) {
   const patterns = [
     { x: 0, y: 0 },
@@ -596,11 +654,10 @@ export function getStackOffsets(count: number, step: number) {
   ] as const
 
   return Array.from({ length: count }, (_, index) => {
-    const pattern =
-      patterns[index] ?? {
-        x: (index % 5) - 2,
-        y: Math.floor(index / 5) - 1,
-      }
+    const pattern = patterns[index] ?? {
+      x: (index % 5) - 2,
+      y: Math.floor(index / 5) - 1,
+    }
 
     return {
       x: pattern.x * step,
@@ -609,6 +666,7 @@ export function getStackOffsets(count: number, step: number) {
   })
 }
 
+// 同格堆叠时整体缩小，避免多颗棋子互相遮挡
 export function getStackScale(stackSize: number) {
   if (stackSize <= 1) {
     return 1
@@ -706,7 +764,10 @@ function getRoundedRectBorderPoint(
         x: left + cornerRadius,
         y: edgePoint.y === top ? top + cornerRadius : bottom - cornerRadius,
       }
-      const angle = Math.atan2(target.y - cornerCenter.y, target.x - cornerCenter.x)
+      const angle = Math.atan2(
+        target.y - cornerCenter.y,
+        target.x - cornerCenter.x,
+      )
       edgePoint = {
         x: cornerCenter.x + Math.cos(angle) * cornerRadius,
         y: cornerCenter.y + Math.sin(angle) * cornerRadius,
@@ -716,7 +777,10 @@ function getRoundedRectBorderPoint(
         x: right - cornerRadius,
         y: edgePoint.y === top ? top + cornerRadius : bottom - cornerRadius,
       }
-      const angle = Math.atan2(target.y - cornerCenter.y, target.x - cornerCenter.x)
+      const angle = Math.atan2(
+        target.y - cornerCenter.y,
+        target.x - cornerCenter.x,
+      )
       edgePoint = {
         x: cornerCenter.x + Math.cos(angle) * cornerRadius,
         y: cornerCenter.y + Math.sin(angle) * cornerRadius,
@@ -726,7 +790,10 @@ function getRoundedRectBorderPoint(
         x: edgePoint.x === left ? left + cornerRadius : right - cornerRadius,
         y: top + cornerRadius,
       }
-      const angle = Math.atan2(target.y - cornerCenter.y, target.x - cornerCenter.x)
+      const angle = Math.atan2(
+        target.y - cornerCenter.y,
+        target.x - cornerCenter.x,
+      )
       edgePoint = {
         x: cornerCenter.x + Math.cos(angle) * cornerRadius,
         y: cornerCenter.y + Math.sin(angle) * cornerRadius,
@@ -736,7 +803,10 @@ function getRoundedRectBorderPoint(
         x: edgePoint.x === left ? left + cornerRadius : right - cornerRadius,
         y: bottom - cornerRadius,
       }
-      const angle = Math.atan2(target.y - cornerCenter.y, target.x - cornerCenter.x)
+      const angle = Math.atan2(
+        target.y - cornerCenter.y,
+        target.x - cornerCenter.x,
+      )
       edgePoint = {
         x: cornerCenter.x + Math.cos(angle) * cornerRadius,
         y: cornerCenter.y + Math.sin(angle) * cornerRadius,
@@ -785,6 +855,7 @@ function drawDottedPolyline(
   }
 }
 
+// 取某玩家所在边的中点（用于绘制停机坪→终点跑道的连接虚线）
 function getOuterBorderMidPoint(layout: BoardLayout, playerIndex: number) {
   const borderSides = [
     layout.leftBorderPoints,
@@ -793,12 +864,10 @@ function getOuterBorderMidPoint(layout: BoardLayout, playerIndex: number) {
     layout.bottomBorderPoints,
   ]
   const points = borderSides[playerIndex]
-  console.log('Border points for player', playerIndex, points)
-  return (
-    points[Math.floor((points.length - 1) / 2)]
-  )
+  return points[Math.floor((points.length - 1) / 2)]
 }
 
+// —— 场景分层：静态层(棋盘，重建代价高) / 动态层(棋子骰子效果，每次同步) ——
 const STATIC_LAYER_NAME = 'flight-ludo-static-layer'
 const DYNAMIC_LAYER_NAME = 'flight-ludo-dynamic-layer'
 const DYNAMIC_OVERLAY_LAYER_NAME = 'flight-ludo-dynamic-overlay-layer'
@@ -806,6 +875,7 @@ const DYNAMIC_PIECES_LAYER_NAME = 'flight-ludo-dynamic-pieces-layer'
 const PIECE_GLOW_NAME = 'flight-ludo-piece-glow'
 const PIECE_BODY_NAME = 'flight-ludo-piece-body'
 
+// 跨帧缓存：场景 → 静态棋盘 key + 棋子组（避免每帧重建棋子节点）
 type SceneRenderState = {
   staticBoardKey: string
   pieceGroups: Map<string, PIXI.Container>
@@ -833,10 +903,12 @@ function getSceneRenderState(scene: PIXI.Container) {
   return state
 }
 
+// 按 label 查找子节点
 function findNamedChild(container: PIXI.Container, name: string) {
   return container.children.find((child) => child.label === name) ?? null
 }
 
+// 获取或创建命名层（PIXI.Container）
 function getOrCreateSceneLayer(scene: PIXI.Container, name: string) {
   const existing = findNamedChild(scene, name)
   if (existing instanceof PIXI.Container) {
@@ -884,6 +956,7 @@ function syncPieceGlow(options: {
   })
 }
 
+// 同步棋子身体：优先用玩家贴图（Sprite），无贴图时降级为纯色圆 + 白描边
 function syncPieceBody(options: {
   pieceGroup: PIXI.Container
   texture: PIXI.Texture | null
@@ -937,12 +1010,15 @@ function syncPieceBody(options: {
     .stroke({ color: 0xffffff, width: 2, alpha: 0.88 })
 }
 
+// 移除本帧不再存在的棋子组（如棋子数减少），避免节点泄漏
 function removeStalePieceGroups(
   piecesLayer: PIXI.Container,
   sceneState: SceneRenderState,
   activePieceIds: Set<string>,
 ) {
-  for (const [pieceId, pieceGroup] of Array.from(sceneState.pieceGroups.entries())) {
+  for (const [pieceId, pieceGroup] of Array.from(
+    sceneState.pieceGroups.entries(),
+  )) {
     if (activePieceIds.has(pieceId)) continue
     if (pieceGroup.parent === piecesLayer) {
       piecesLayer.removeChild(pieceGroup)
@@ -952,6 +1028,7 @@ function removeStalePieceGroups(
   }
 }
 
+// 静态棋盘缓存 key：任一相关配置变化才重建静态层，其余帧直接复用
 function buildStaticBoardKey(options: {
   width: number
   height: number
@@ -981,6 +1058,17 @@ function buildStaticBoardKey(options: {
   ].join(':')
 }
 
+/**
+ * 全量渲染入口（每次游戏状态/动画状态变化时调用）。
+ *
+ * 结构：
+ *  1. 静态层：棋盘格、四边虚线、终点跑道格、基地→起点连线、停机坪→终点连接线
+ *     （仅当 buildStaticBoardKey 变化时重建）
+ *  2. 叠加层：基地高亮（可摇骰提示）、中央骰子、胜利横幅、落点圈
+ *  3. 棋子层：计算所有棋子像素位置与堆叠、绑定点击、同步贴图/发光
+ *
+ * 返回当前布局（供调用方缓存）。
+ */
 export function renderPlayScene(options: RenderPlaySceneOptions) {
   const staticLayer = getOrCreateSceneLayer(options.scene, STATIC_LAYER_NAME)
   const dynamicLayer = getOrCreateSceneLayer(options.scene, DYNAMIC_LAYER_NAME)
@@ -1009,11 +1097,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
   )
 
   const layout = options.layout
-  const {
-    trackPoints,
-    baseSlots,
-    finishSlots,
-  } = layout
+  const { trackPoints, baseSlots, finishSlots } = layout
 
   const sceneState = getSceneRenderState(options.scene)
   const staticBoardKey = buildStaticBoardKey({
@@ -1038,7 +1122,11 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
         options.game.players.length
       const activeColor = options.game.players[playerIndex].color
       const isStartCell = index % options.boardPreset.stepsPerEdge === 0
-      const isSafeTrackCell = isSafeCell(playerIndex, index, options.game.boardPresetId)
+      const isSafeTrackCell = isSafeCell(
+        playerIndex,
+        index,
+        options.game.boardPresetId,
+      )
       cell
         .roundRect(
           point.x - trackSize / 2,
@@ -1126,14 +1214,21 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
         staticLayer.addChild(laneCell)
       }
 
-      // base point: 
-      // player 0 is  top left, 
-      // player 1 is top right, 
-      // player 2 is bottom right, 
+      // base point:
+      // player 0 is  top left,
+      // player 1 is top right,
+      // player 2 is bottom right,
       // player 3 is bottom left
-      const baseBounds = getPaddedPointBounds(baseSlots[player.index], 2.5*outerBorderDotSpacing)
+      const baseBounds = getPaddedPointBounds(
+        baseSlots[player.index],
+        2.5 * outerBorderDotSpacing,
+      )
       const startPoint = options.layout.trackPoints[player.startIndex]
-      const baseEdgePoint = getRoundedRectBorderPoint(baseBounds, 14, startPoint)
+      const baseEdgePoint = getRoundedRectBorderPoint(
+        baseBounds,
+        14,
+        startPoint,
+      )
 
       // Draw dotted line from base roundRect edge to start point on track
       const baseToStartLine = new PIXI.Graphics()
@@ -1145,33 +1240,34 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
       })
       staticLayer.addChild(baseToStartLine)
 
-
       // Draw dotted lines from outer border midpoint to track home lane entry
       const homeConnector = new PIXI.Graphics()
       const outerMidPoint = getOuterBorderMidPoint(layout, player.index)
       const homeConnectorPoints = [outerMidPoint, ...finish]
-      console.log('Home connector points for player', player.index, homeConnectorPoints)
 
       drawDottedPolyline(homeConnector, homeConnectorPoints, {
         color: hexToNumber(player.color),
         alpha: 0.25,
         dotRadius: Math.max(4, trackSize * 0.075),
-        dotSpacing: outerBorderDotSpacing
+        dotSpacing: outerBorderDotSpacing,
       })
       staticLayer.addChild(homeConnector)
     }
 
-
     sceneState.staticBoardKey = staticBoardKey
   }
 
+  // —— 叠加层：基地高亮 + 中央骰子 + 胜利/落点效果 ——
   const {
     overlayLayer,
     overlayBasesLayer,
     overlayEffectsLayer,
     overlayDiceLayer,
   } = getOverlayLayers(options.scene)
-  const piecesLayer = getOrCreateSceneLayer(dynamicLayer, DYNAMIC_PIECES_LAYER_NAME)
+  const piecesLayer = getOrCreateSceneLayer(
+    dynamicLayer,
+    DYNAMIC_PIECES_LAYER_NAME,
+  )
   for (const child of dynamicLayer.children.slice()) {
     if (child !== overlayLayer && child !== piecesLayer) {
       dynamicLayer.removeChild(child)
@@ -1195,6 +1291,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
   const baseBoard = overlayBasesLayer
   const effectsBoard = overlayEffectsLayer
 
+  // 是否允许摇骰：未结束 / 未掷骰 / 非回合切换中 / 无移动动画 / （真人回合或关闭了托管）
   const canRoll =
     options.game.winnerIndex === -1 &&
     options.game.dice === 0 &&
@@ -1202,6 +1299,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
     options.move.movingPoint === null &&
     (options.turn.isHumanTurn() || !options.autoPlayMode)
 
+  // 基地块：高亮当前玩家基地，可摇骰时整个基地可点击 + 呼吸光晕提示
   for (const player of options.game.players) {
     const playerBase = new PIXI.Graphics()
     const baseBounds = getPaddedPointBounds(
@@ -1280,6 +1378,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
 
   syncDiceOverlay(options)
 
+  // 胜利横幅与落点脉冲圈（效果层）
   if (options.winner) {
     const banner = new PIXI.Graphics()
       .roundRect(
@@ -1309,6 +1408,8 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
     effectsBoard.addChild(pulse)
   }
 
+  // —— 棋子渲染 ——
+  // 先把每个棋子的规则位置换算为像素坐标（base/track/home/finished 四种位置）
   const pieces: PieceRenderInfo[] = options.game.players.flatMap((player) =>
     player.pieces.map((piece, pieceIndex) => {
       const location = getPieceLocation(player, piece)
@@ -1341,6 +1442,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
         y = slot.y
       }
 
+      // 落点脉冲圈附近的棋子轻微推开，让落点效果可见
       if (
         options.move.landingPoint &&
         options.move.landingPoint.color === player.color &&
@@ -1354,6 +1456,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
         }
       }
 
+      // 被吃飞行动画期间用动画坐标覆盖静态坐标
       const capturedFlight = options.move.capturedFlights.find(
         (flight) => flight.pieceId === piece.id,
       )
@@ -1370,17 +1473,18 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
     }),
   )
 
+  // 同格堆叠：按像素坐标分桶，同桶的棋子错位排开并整体缩小
   const stackStep = Math.max(
     2,
-    Math.round(pieceRadius * Math.min(trackPieceBodyScale, basePieceBodyScale) * 0.12),
+    Math.round(
+      pieceRadius * Math.min(trackPieceBodyScale, basePieceBodyScale) * 0.12,
+    ),
   )
   const stackGroups = new Map<string, number[]>()
   const getStackKey = (pieceInfo: (typeof pieces)[number]) =>
-    [
-      pieceInfo.location,
-      pieceInfo.x.toFixed(2),
-      pieceInfo.y.toFixed(2),
-    ].join('|')
+    [pieceInfo.location, pieceInfo.x.toFixed(2), pieceInfo.y.toFixed(2)].join(
+      '|',
+    )
 
   pieces.forEach((pieceInfo, index) => {
     const key = getStackKey(pieceInfo)
@@ -1403,6 +1507,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
 
   const activePieceIds = new Set<string>()
 
+  // 逐个同步棋子组：位置/缩放/点击/发光/身体/被吃旋转透明度；复用缓存的 pieceGroup
   for (const [index, pieceInfo] of pieces.entries()) {
     activePieceIds.add(pieceInfo.piece.id)
     const isLegal =
@@ -1414,7 +1519,10 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
     const isCaptured = Boolean(pieceInfo.capturedFlight)
     const movingPosition = options.move.movingPoint
     const capturedRenderState = pieceInfo.capturedFlight
-      ? getCapturedFlightRenderState(pieceInfo.capturedFlight, performance.now())
+      ? getCapturedFlightRenderState(
+          pieceInfo.capturedFlight,
+          performance.now(),
+        )
       : null
     const stackIndex = stackIndexByPiece.get(index) ?? 0
     const stackSize = stackSizeByPiece.get(index) ?? 1
@@ -1433,12 +1541,16 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
     }
 
     pieceGroup.position.set(
-      (isMoving && movingPosition ? movingPosition.x : pieceInfo.x) + stackOffset.x,
-      (isMoving && movingPosition ? movingPosition.y : pieceInfo.y) + stackOffset.y,
+      (isMoving && movingPosition ? movingPosition.x : pieceInfo.x) +
+        stackOffset.x,
+      (isMoving && movingPosition ? movingPosition.y : pieceInfo.y) +
+        stackOffset.y,
     )
     pieceGroup.scale.set(stackScale)
-    pieceGroup.eventMode = isLegal && !isMoving && !isCaptured ? 'static' : 'passive'
-    pieceGroup.cursor = isLegal && !isMoving && !isCaptured ? 'pointer' : 'default'
+    pieceGroup.eventMode =
+      isLegal && !isMoving && !isCaptured ? 'static' : 'passive'
+    pieceGroup.cursor =
+      isLegal && !isMoving && !isCaptured ? 'pointer' : 'default'
     pieceGroup.removeAllListeners()
 
     if (isLegal && !isMoving) {
@@ -1456,9 +1568,7 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
     const tint = hexToNumber(pieceInfo.player.color)
     const texture = options.getPlayerPieceTexture(pieceInfo.player.index)
     const pieceBodyScale =
-      pieceInfo.location === 'base'
-        ? basePieceBodyScale
-        : trackPieceBodyScale
+      pieceInfo.location === 'base' ? basePieceBodyScale : trackPieceBodyScale
     syncPieceBody({
       pieceGroup,
       texture,

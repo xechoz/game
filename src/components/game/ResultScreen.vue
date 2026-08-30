@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * 结果页：展示获胜玩家 + 再玩一次 / 返回准备页
+ * 作为覆盖层叠加在游戏页之上（v-if 页面切到 result 时显示）
+ */
 import { computed } from 'vue'
 import { useI18n } from '../../i18n'
 
@@ -27,16 +31,29 @@ const { t } = useI18n()
 <template>
   <section class="page page-result">
     <div class="result-card glass-card" @click.stop>
-
       <div class="winner-hero">
-        <img class="winner-plane" :src="winnerAvatar" :alt="t('winnerPlaneAlt', { winnerName: props.winnerName })" />
+        <img
+          class="winner-plane"
+          :src="winnerAvatar"
+          :alt="t('winnerPlaneAlt', { winnerName: props.winnerName })"
+        />
       </div>
 
       <div class="actions">
-        <button class="action-button" type="button" :aria-label="t('onceMoreButton')" @click="emit('replay')">
+        <button
+          class="action-button"
+          type="button"
+          :aria-label="t('onceMoreButton')"
+          @click="emit('replay')"
+        >
           <img :src="onceMoreButtonImage" :alt="t('onceMoreButton')" />
         </button>
-        <button class="action-button" type="button" :aria-label="t('backButton')" @click="emit('prepare')">
+        <button
+          class="action-button"
+          type="button"
+          :aria-label="t('backButton')"
+          @click="emit('prepare')"
+        >
           <img :src="closeButtonImage" :alt="t('backButton')" />
         </button>
       </div>
@@ -60,7 +77,7 @@ const { t } = useI18n()
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(7, 12, 24, 0.0);
+  background: rgba(7, 12, 24, 0);
   backdrop-filter: blur(12px);
   pointer-events: auto;
 }
@@ -75,7 +92,7 @@ const { t } = useI18n()
   margin: 0;
   padding: 32px 24px 26px;
   min-height: 360px;
-  background-image: url("/victory_bg.png");
+  background-image: url('/victory_bg.png');
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
@@ -89,7 +106,6 @@ const { t } = useI18n()
   text-align: center;
   padding-bottom: 12px;
 }
-
 
 .winner-hero {
   display: flex;
@@ -135,7 +151,10 @@ const { t } = useI18n()
   background: rgba(255, 255, 255, 0.08);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
   display: grid;
   place-items: center;
 }
@@ -149,7 +168,9 @@ const { t } = useI18n()
 .action-button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), 0 14px 28px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 14px 28px rgba(0, 0, 0, 0.12);
 }
 
 .action-button:active {

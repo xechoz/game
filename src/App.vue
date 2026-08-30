@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * 应用根组件：页面路由（prepare → play → result）
+ *
+ * - 维护全局配置（mode / piecesPerPlayer / boardPresetId / autoPlayMode）
+ * - 通过 v-if 在三个页面组件间切换；play 与 result 使用 defineAsyncComponent 懒加载
+ * - PlayPage 复用同一份场景（result 页叠加在其上），保证背后棋盘不闪烁
+ */
 import { defineAsyncComponent, ref } from 'vue'
 
 import PrepareScreen from './components/game/PrepareScreen.vue'
@@ -8,12 +15,14 @@ import { type BoardPresetId, type GameMode } from './game'
 const assetBase = import.meta.env.BASE_URL
 const appBg = `${assetBase}prepare-bg.png`
 
+// 懒加载（分包）：PlayScreen.Content 与 ResultScreen 只在实际进入时下载
 const loadResultScreen = () => import('./components/game/ResultScreen.vue')
 const loadPlayPage = () => import('./components/game/PlayScreen.Content.vue')
 
 const ResultScreen = defineAsyncComponent(loadResultScreen)
 const PlayPage = defineAsyncComponent(loadPlayPage)
 
+// 全局配置与页面状态
 const mode = ref<GameMode>(1)
 const piecesPerPlayer = ref(4)
 const boardPresetId = ref<BoardPresetId>('tiny-3')
@@ -22,6 +31,7 @@ const autoPlayMode = ref(true)
 const winnerName = ref('')
 const winnerIndex = ref(0)
 
+// 准备页点击开始：预加载 play 分包后再切页，避免白屏
 async function startGame() {
   await loadPlayPage()
   page.value = 'play'
@@ -31,6 +41,7 @@ function goToPrepare() {
   page.value = 'prepare'
 }
 
+// 结果页"再玩一次"：直接切回 play（复用已就绪的 PIXI 场景，内部会重开一局）
 function replayGame() {
   page.value = 'play'
 }
@@ -47,7 +58,12 @@ function setBoardPresetId(nextBoardPresetId: BoardPresetId) {
   boardPresetId.value = nextBoardPresetId
 }
 
-function handleWinnerChange(nextWinner: { name: string; color: string; index: number }) {
+// 对局出现胜利者：记录获胜信息并切到结果页
+function handleWinnerChange(nextWinner: {
+  name: string
+  color: string
+  index: number
+}) {
   winnerName.value = nextWinner.name
   winnerIndex.value = nextWinner.index
   page.value = 'result'

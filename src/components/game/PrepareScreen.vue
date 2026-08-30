@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * 准备页：选择玩家人数（1~4P）开始对局
+ * 点击任意模式卡片即启动游戏（同时解锁 BGM 播放）
+ */
 import { computed } from 'vue'
 import { useI18n } from '../../i18n'
 import { createSceneAudio } from '../../composables/flight-ludo-play-scene/sceneAudio'
@@ -17,7 +21,9 @@ const emit = defineEmits<{
 
 const assetBase = import.meta.env.BASE_URL
 const { t } = useI18n()
-const { startBackgroundMusic } = createSceneAudio((name) => `${assetBase}${name}`)
+const { startBackgroundMusic } = createSceneAudio(
+  (name) => `${assetBase}${name}`,
+)
 
 function selectMode(value: 1 | 2 | 3 | 4) {
   startBackgroundMusic()
@@ -79,7 +85,11 @@ const modeOptions = computed(() => [
         <button
           v-for="option in modeOptions"
           :key="option.value"
-          :class="['select-card', `card-${option.avatars.length}`, { active: props.mode === option.value }]"
+          :class="[
+            'select-card',
+            `card-${option.avatars.length}`,
+            { active: props.mode === option.value },
+          ]"
           type="button"
           :aria-label="t('playerMode', { count: option.value })"
           :style="{ '--accent': option.accent }"
@@ -164,7 +174,12 @@ const modeOptions = computed(() => [
 }
 
 .dec-cloud {
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04) 70%, transparent 72%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0.04) 70%,
+    transparent 72%
+  );
   filter: blur(2px);
 }
 
@@ -189,9 +204,18 @@ const modeOptions = computed(() => [
   box-shadow: 0 0 18px rgba(255, 255, 255, 0.4);
 }
 
-.dot-a { top: 18%; left: 18%; }
-.dot-b { top: 66%; left: 10%; }
-.dot-c { top: 72%; right: 14%; }
+.dot-a {
+  top: 18%;
+  left: 18%;
+}
+.dot-b {
+  top: 66%;
+  left: 10%;
+}
+.dot-c {
+  top: 72%;
+  right: 14%;
+}
 
 .mode-shell {
   position: relative;
@@ -201,7 +225,11 @@ const modeOptions = computed(() => [
   padding: 16px;
   border-radius: 32px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.08)
+    ),
     rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow:
@@ -232,7 +260,11 @@ const modeOptions = computed(() => [
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 30px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.16)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.42),
+      rgba(255, 255, 255, 0.16)
+    ),
     rgba(255, 255, 255, 0.12);
   color: rgba(0, 0, 0, 0.95);
   cursor: pointer;
@@ -261,9 +293,21 @@ const modeOptions = computed(() => [
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.42), transparent 20%),
-    radial-gradient(circle at 80% 18%, rgba(255, 255, 255, 0.34), transparent 18%),
-    radial-gradient(circle at 50% 76%, rgba(255, 255, 255, 0.18), transparent 42%);
+    radial-gradient(
+      circle at 20% 18%,
+      rgba(255, 255, 255, 0.42),
+      transparent 20%
+    ),
+    radial-gradient(
+      circle at 80% 18%,
+      rgba(255, 255, 255, 0.34),
+      transparent 18%
+    ),
+    radial-gradient(
+      circle at 50% 76%,
+      rgba(255, 255, 255, 0.18),
+      transparent 42%
+    );
   pointer-events: none;
 }
 
@@ -272,8 +316,18 @@ const modeOptions = computed(() => [
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(135deg, transparent 0 18%, rgba(255, 255, 255, 0.2) 18% 19%, transparent 19% 100%),
-    linear-gradient(315deg, transparent 0 18%, rgba(255, 255, 255, 0.18) 18% 19%, transparent 19% 100%);
+    linear-gradient(
+      135deg,
+      transparent 0 18%,
+      rgba(255, 255, 255, 0.2) 18% 19%,
+      transparent 19% 100%
+    ),
+    linear-gradient(
+      315deg,
+      transparent 0 18%,
+      rgba(255, 255, 255, 0.18) 18% 19%,
+      transparent 19% 100%
+    );
   pointer-events: none;
   opacity: 0.9;
 }
@@ -293,7 +347,11 @@ const modeOptions = computed(() => [
   left: 0;
   right: 0;
   height: 16px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white), transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 88%, white),
+    transparent
+  );
   opacity: 0.9;
 }
 
@@ -302,8 +360,16 @@ const modeOptions = computed(() => [
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background:
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.14), transparent 56%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    radial-gradient(
+      circle at center,
+      rgba(255, 255, 255, 0.14),
+      transparent 56%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0.02)
+    );
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
@@ -327,10 +393,22 @@ const modeOptions = computed(() => [
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
 }
 
-.corner-a { top: 0; left: 0; }
-.corner-b { top: 0; right: 0; }
-.corner-c { bottom: 0; left: 0; }
-.corner-d { bottom: 0; right: 0; }
+.corner-a {
+  top: 0;
+  left: 0;
+}
+.corner-b {
+  top: 0;
+  right: 0;
+}
+.corner-c {
+  bottom: 0;
+  left: 0;
+}
+.corner-d {
+  bottom: 0;
+  right: 0;
+}
 
 .mode-badge {
   width: 46px;
@@ -341,7 +419,11 @@ const modeOptions = computed(() => [
   font-size: 15px;
   font-weight: 900;
   color: #fff;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white), color-mix(in srgb, var(--accent) 78%, black));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 92%, white),
+    color-mix(in srgb, var(--accent) 78%, black)
+  );
   box-shadow: 0 10px 20px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
@@ -358,8 +440,16 @@ const modeOptions = computed(() => [
   inset: 14px;
   border-radius: 24px;
   background:
-    radial-gradient(circle at center, color-mix(in srgb, var(--accent) 24%, transparent), transparent 58%),
-    radial-gradient(circle at 50% 36%, rgba(255, 255, 255, 0.12), transparent 42%);
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--accent) 24%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      circle at 50% 36%,
+      rgba(255, 255, 255, 0.12),
+      transparent 42%
+    );
   opacity: 0;
   transition: opacity 0.18s ease;
 }

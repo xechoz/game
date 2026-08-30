@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * 游戏页 UI 壳：canvas 挂载点（PIXI 渲染到此处）+ 顶栏（返回按钮 / 难度切换）
+ * 通过 defineExpose 暴露 canvasEl 给上层 composable 使用
+ */
 import { computed, ref } from 'vue'
 import { useI18n } from '../../i18n'
 
@@ -52,7 +56,12 @@ const difficultyOptions = computed(() => [
     <div class="grid play-grid">
       <div class="play-topbar">
         <div class="play-controls-row">
-          <button class="circle-action secondary back-action" type="button" :aria-label="t('backToPrepare')" @click="emit('back')">
+          <button
+            class="circle-action secondary back-action"
+            type="button"
+            :aria-label="t('backToPrepare')"
+            @click="emit('back')"
+          >
             <img class="back-icon" :src="backButtonImage" alt="" />
           </button>
           <div class="board-preset-row" :aria-label="t('difficultyMode')">
@@ -66,7 +75,11 @@ const difficultyOptions = computed(() => [
               :aria-label="option.title"
               @click="emit('update:board-preset-id', option.value)"
             >
-              <img class="preset-image" :src="option.image" :alt="option.title" />
+              <img
+                class="preset-image"
+                :src="option.image"
+                :alt="option.title"
+              />
               <span class="sr-only">{{ option.title }}</span>
             </button>
           </div>
@@ -74,7 +87,11 @@ const difficultyOptions = computed(() => [
         </div>
       </div>
       <div class="play-stage">
-        <section ref="canvasEl" class="canvas-shell play-canvas-shell" :aria-label="t('rollCanvas')" />
+        <section
+          ref="canvasEl"
+          class="canvas-shell play-canvas-shell"
+          :aria-label="t('rollCanvas')"
+        />
       </div>
     </div>
   </section>
@@ -102,7 +119,12 @@ const difficultyOptions = computed(() => [
 }
 
 .play-grid {
-  --play-canvas-width: min(100%, 760px, calc(100dvw - 20px), calc((100dvh - 212px) / 1.5));
+  --play-canvas-width: min(
+    100%,
+    760px,
+    calc(100dvw - 20px),
+    calc((100dvh - 212px) / 1.5)
+  );
   display: grid;
   gap: 14px;
   place-items: center;
@@ -183,7 +205,11 @@ const difficultyOptions = computed(() => [
   padding: 0;
   overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.18),
+      rgba(255, 255, 255, 0.04)
+    ),
     rgba(255, 255, 255, 0.08);
   box-shadow:
     0 8px 18px rgba(0, 31, 61, 0.1),
@@ -219,7 +245,11 @@ const difficultyOptions = computed(() => [
   inset: 4px;
   border-radius: 10px;
   background:
-    radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.24), transparent 30%),
+    radial-gradient(
+      circle at 50% 22%,
+      rgba(255, 255, 255, 0.24),
+      transparent 30%
+    ),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 55%);
   pointer-events: none;
 }

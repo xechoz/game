@@ -1,3 +1,15 @@
+/**
+ * 棋盘几何计算（纯函数，无副作用）
+ *
+ * 输入：画布原点/尺寸 + BoardPreset（格子数）+ BoardRenderLayout（比例参数）
+ * 输出：BoardLayout —— 一组可直接用于 PIXI 绘制的像素坐标：
+ *  - trackPoints: 外圈跑道格子中心点（长度 = trackLength）
+ *  - baseSlots:   四角停机坪槽位（每玩家 piecesPerPlayer 个槽）
+ *  - finishSlots: 终点跑道格子（每玩家 homeSteps 个）
+ *  - 各边边界点 / 终点跑道入口点
+ *
+ * 与规则层无关：规则用格子下标抽象，渲染层用这里的像素坐标。
+ */
 import type { BoardRenderLayout } from '../../game'
 import type { BoardLayout } from './types'
 
@@ -7,10 +19,12 @@ type BoardPresetLayoutInput = {
   homeSteps: number
 }
 
+// 线性插值
 function lerp(start: number, end: number, t: number) {
   return start + (end - start) * t
 }
 
+// 在 start→end 连线上均匀生成 count 个点（含两端）
 function buildLinePoints(
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -27,6 +41,7 @@ function buildLinePoints(
   })
 }
 
+// 按顺时针生成矩形的四条边点（首尾相连，去重公共顶点后即完整周长）
 function buildPerimeterPoints(
   left: number,
   right: number,
@@ -34,10 +49,26 @@ function buildPerimeterPoints(
   bottom: number,
   stepsPerEdge: number,
 ) {
-  const topSide = buildLinePoints({ x: left, y: top }, { x: right, y: top }, stepsPerEdge)
-  const rightSide = buildLinePoints({ x: right, y: top }, { x: right, y: bottom }, stepsPerEdge)
-  const bottomSide = buildLinePoints({ x: right, y: bottom }, { x: left, y: bottom }, stepsPerEdge)
-  const leftSide = buildLinePoints({ x: left, y: bottom }, { x: left, y: top }, stepsPerEdge)
+  const topSide = buildLinePoints(
+    { x: left, y: top },
+    { x: right, y: top },
+    stepsPerEdge,
+  )
+  const rightSide = buildLinePoints(
+    { x: right, y: top },
+    { x: right, y: bottom },
+    stepsPerEdge,
+  )
+  const bottomSide = buildLinePoints(
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+    stepsPerEdge,
+  )
+  const leftSide = buildLinePoints(
+    { x: left, y: bottom },
+    { x: left, y: top },
+    stepsPerEdge,
+  )
 
   return {
     topSide,
@@ -60,8 +91,7 @@ export function buildBoardLayout(
   boardPreset: BoardPresetLayoutInput,
   boardRenderLayout: BoardRenderLayout,
 ): BoardLayout {
-  console.log('Building board layout with preset:', boardPreset, 'and render layout:', boardRenderLayout, "origin:", originX, originY, "size:", size)
-
+  // 外圈矩形四条边按比例内缩，得到跑道范围
   const trackInset = size * boardRenderLayout.trackInsetRatio
   const left = originX + trackInset
   const right = originX + size - trackInset
@@ -70,21 +100,17 @@ export function buildBoardLayout(
   const centerX = originX + size / 2
   const centerY = originY + size / 2
 
-  const { topSide, rightSide, bottomSide, leftSide, perimeterPoints } = buildPerimeterPoints(
-    left,
-    right,
-    top,
-    bottom,
-    boardPreset.stepsPerEdge,
-  )
+  const { topSide, rightSide, bottomSide, leftSide, perimeterPoints } =
+    buildPerimeterPoints(left, right, top, bottom, boardPreset.stepsPerEdge)
 
   // 外圈路径：保持闭合矩形外环，左侧只比其它三边少一个点，用来匹配当前 trackLength。
   const leftRouteSide = buildLinePoints(
     { x: left, y: bottom },
     { x: left, y: top },
-    boardPreset.stepsPerEdge
+    boardPreset.stepsPerEdge,
   )
 
+  // 跑道点序列：上→右→下→左，去掉每边重复的顶点，总长度恰为 trackLength
   const trackPoints = [
     ...topSide,
     ...rightSide.slice(1),
@@ -94,6 +120,7 @@ export function buildBoardLayout(
 
   const outerBorderPoints = perimeterPoints
 
+  // 四个角的停机坪槽位：每个象限内按 spread 散布 4 个槽（2×2）
   const buildBaseSlots = () => {
     const spread = size * boardRenderLayout.baseSlotSpreadRatio
     const quadrantInset = size * boardRenderLayout.baseZonePaddingRatio
@@ -136,16 +163,22 @@ export function buildBoardLayout(
     })
   }
 
+  // 各玩家终点跑道：从边中点锚点出发，向棋盘中心方向收缩 finishGap 后，
+  // 等距插值出 homeSteps 个格子（laneIndex 越大越靠近终点）
   const buildFinishSlots = (originXValue: number, originYValue: number) => {
     const slotCenterX = originXValue + size / 2
     const slotCenterY = originYValue + size / 2
     const finishGap = size * boardRenderLayout.finishGapRatio
 
     const laneAnchors = [
-      leftSide[Math.floor((leftSide.length - 1) / 2)] ?? leftSide[0] ?? { x: left, y: centerY },
-      topSide[Math.floor((topSide.length - 1) / 2)] ?? topSide[0] ?? { x: centerX, y: top },
-      rightSide[Math.floor((rightSide.length - 1) / 2)] ?? rightSide[0] ?? { x: right, y: centerY },
-      bottomSide[Math.floor((bottomSide.length - 1) / 2)] ?? bottomSide[0] ?? { x: centerX, y: bottom },
+      leftSide[Math.floor((leftSide.length - 1) / 2)] ??
+        leftSide[0] ?? { x: left, y: centerY },
+      topSide[Math.floor((topSide.length - 1) / 2)] ??
+        topSide[0] ?? { x: centerX, y: top },
+      rightSide[Math.floor((rightSide.length - 1) / 2)] ??
+        rightSide[0] ?? { x: right, y: centerY },
+      bottomSide[Math.floor((bottomSide.length - 1) / 2)] ??
+        bottomSide[0] ?? { x: centerX, y: bottom },
     ]
 
     const getFinishTarget = (anchor: { x: number; y: number }) => {
@@ -180,10 +213,14 @@ export function buildBoardLayout(
   }
 
   const homeEntryPoints = [
-    leftSide[Math.floor((leftSide.length - 1) / 2)] ?? leftSide[0] ?? { x: left, y: centerY },
-    topSide[Math.floor((topSide.length - 1) / 2)] ?? topSide[0] ?? { x: centerX, y: top },
-    rightSide[Math.floor((rightSide.length - 1) / 2)] ?? rightSide[0] ?? { x: right, y: centerY },
-    bottomSide[Math.floor((bottomSide.length - 1) / 2)] ?? bottomSide[0] ?? { x: centerX, y: bottom },
+    leftSide[Math.floor((leftSide.length - 1) / 2)] ??
+      leftSide[0] ?? { x: left, y: centerY },
+    topSide[Math.floor((topSide.length - 1) / 2)] ??
+      topSide[0] ?? { x: centerX, y: top },
+    rightSide[Math.floor((rightSide.length - 1) / 2)] ??
+      rightSide[0] ?? { x: right, y: centerY },
+    bottomSide[Math.floor((bottomSide.length - 1) / 2)] ??
+      bottomSide[0] ?? { x: centerX, y: bottom },
   ]
 
   return {
