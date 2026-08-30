@@ -49,22 +49,22 @@ const modeOptions = computed(() => [
   {
     value: 1 as const,
     avatars: playerAvatars.value.slice(0, 1),
-    accent: '#ffb347',
+    accent: '#FD725B',
   },
   {
     value: 2 as const,
     avatars: playerAvatars.value.slice(0, 2),
-    accent: '#5f9cff',
+    accent: '#0F99C0',
   },
   {
     value: 3 as const,
     avatars: playerAvatars.value.slice(0, 3),
-    accent: '#56d38f',
+    accent: '#80BA48',
   },
   {
     value: 4 as const,
     avatars: playerAvatars.value.slice(0, 4),
-    accent: '#f56f7f',
+    accent: '#FCDC59',
   },
 ])
 </script>
@@ -97,14 +97,6 @@ const modeOptions = computed(() => [
         >
           <div class="card-topbar"></div>
           <div class="card-glow"></div>
-          <div class="card-board"></div>
-          <div class="card-route"></div>
-          <div class="card-corners" aria-hidden="true">
-            <span class="corner corner-a"></span>
-            <span class="corner corner-b"></span>
-            <span class="corner corner-c"></span>
-            <span class="corner corner-d"></span>
-          </div>
           <div class="avatar-stack" :class="`stack-${option.avatars.length}`">
             <img
               v-for="avatar in option.avatars"
@@ -333,9 +325,6 @@ const modeOptions = computed(() => [
 }
 
 .card-topbar,
-.card-board,
-.card-route,
-.card-corners,
 .card-footer,
 .card-glow {
   position: absolute;
@@ -353,61 +342,6 @@ const modeOptions = computed(() => [
     transparent
   );
   opacity: 0.9;
-}
-
-.card-board {
-  inset: 14px;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background:
-    radial-gradient(
-      circle at center,
-      rgba(255, 255, 255, 0.14),
-      transparent 56%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.06),
-      rgba(255, 255, 255, 0.02)
-    );
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.card-route {
-  inset: 31% 16% 26%;
-  border-radius: 20px;
-  border: 2px dashed rgba(255, 255, 255, 0.42);
-  opacity: 0.8;
-}
-
-.card-corners {
-  inset: 18px;
-}
-
-.corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 80%, white);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
-}
-
-.corner-a {
-  top: 0;
-  left: 0;
-}
-.corner-b {
-  top: 0;
-  right: 0;
-}
-.corner-c {
-  bottom: 0;
-  left: 0;
-}
-.corner-d {
-  bottom: 0;
-  right: 0;
 }
 
 .mode-badge {
@@ -577,14 +511,6 @@ const modeOptions = computed(() => [
 
   .card-topbar {
     height: 14px;
-  }
-
-  .card-board {
-    inset: 12px;
-  }
-
-  .card-route {
-    inset: 33% 15% 27%;
   }
 
   .mode-badge {
