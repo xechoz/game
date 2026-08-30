@@ -24,8 +24,7 @@ type DiceRenderState = {
   diceLandingSquash: number
   diceResultPop: number
   diceIdlePulse: number
-  diceIdleShake: number
-  diceIdleLift: number
+  idleRipple: number
   getDiceDisplayValue: () => number
 }
 
@@ -80,6 +79,18 @@ type DiceSceneOptions = Pick<
 
 export function hexToNumber(color: string) {
   return Number.parseInt(color.replace('#', ''), 16)
+}
+
+type RippleRing = {
+  progress: number
+  alpha: number
+}
+
+function getRippleRings(phase: number, count = 2): RippleRing[] {
+  return Array.from({ length: count }, (_, index) => {
+    const progress = (phase + index / count) % 1
+    return { progress, alpha: 1 - progress }
+  })
 }
 
 const DIE_PIP_GRID = {
@@ -141,6 +152,7 @@ const DICE_PIPS_LAYER_NAME = 'flight-ludo-dice-pips-layer'
 const DICE_PROMPT_GLOW_NAME = 'flight-ludo-dice-prompt-glow'
 const DICE_SETTLE_FLASH_NAME = 'flight-ludo-dice-settle-flash'
 const DICE_PIP_NAME_PREFIX = 'flight-ludo-dice-pip'
+const DICE_IDLE_RIPPLE_NAME = 'flight-ludo-dice-idle-ripple'
 
 function getOrCreateGraphicsChild(
   container: PIXI.Container,
@@ -375,6 +387,28 @@ function syncDiceOverlay(options: DiceSceneOptions) {
     diceGroup.on('pointerdown', () => options.onRoll(false))
   }
 
+  const idleRippleLayer = getOrCreateGraphicsChild(
+    center,
+    DICE_IDLE_RIPPLE_NAME,
+    0,
+  )
+  idleRippleLayer.eventMode = 'none'
+  idleRippleLayer.visible = canRoll
+  idleRippleLayer.clear()
+  if (canRoll) {
+    const rippleBaseRadius = diceSize * 0.52
+    const rippleSpan = diceSize * 0.62
+    for (const ring of getRippleRings(options.dice.idleRipple)) {
+      idleRippleLayer
+        .circle(0, 0, rippleBaseRadius + ring.progress * rippleSpan)
+        .stroke({
+          color: currentPlayerColor,
+          width: 2.5,
+          alpha: ring.alpha * 0.38,
+        })
+    }
+  }
+
   const faceSize = diceSize * 0.72
   const fittedHeight = diceSize * 0.98
   const fittedWidth = diceSize * 0.92
@@ -458,10 +492,6 @@ function syncDiceOverlay(options: DiceSceneOptions) {
     1 +
     options.dice.diceIdlePulse * 0.05 +
     (options.dice.isRolling ? 0.05 : 0)
-  const shakeX =
-    options.dice.diceIdleShake * (options.dice.isRolling ? 4.5 : 3)
-  const shakeY =
-    Math.sin(options.dice.diceIdleShake * Math.PI * 0.5) * 2.2
   const landingScaleX =
     1 +
     options.dice.diceLandingSquash * 0.34 +
@@ -487,11 +517,8 @@ function syncDiceOverlay(options: DiceSceneOptions) {
       : 1) *
     landingScaleY
   diceGroup.position.set(
-    shakeX,
-    shakeY -
-    options.dice.diceIdleLift -
-    options.dice.diceLandingLift +
-    landingSettleNudge * fittedHeight * 0.08,
+    0,
+    -options.dice.diceLandingLift + landingSettleNudge * fittedHeight * 0.08,
   )
   diceGroup.rotation = options.dice.diceSpinRotation
   diceGroup.scale.set(spinScaleX, spinScaleY)
@@ -1209,6 +1236,45 @@ export function renderPlayScene(options: RenderPlaySceneOptions) {
         baseBounds.height,
       )
       playerBase.on('pointerdown', () => options.onRoll(false))
+    }
+
+    if (isActivePlayer && canRoll) {
+      const breath = 0.5 + 0.5 * Math.sin(options.dice.idleRipple * Math.PI * 2)
+      const playerColor = hexToNumber(player.color)
+
+      const outerGlow = new PIXI.Graphics()
+      outerGlow.eventMode = 'none'
+      outerGlow
+        .roundRect(
+          baseBounds.x - 6,
+          baseBounds.y - 6,
+          baseBounds.width + 12,
+          baseBounds.height + 12,
+          18,
+        )
+        .stroke({
+          color: playerColor,
+          width: 5,
+          alpha: 0.05 + breath * 0.08,
+        })
+      baseBoard.addChild(outerGlow)
+
+      const baseGlow = new PIXI.Graphics()
+      baseGlow.eventMode = 'none'
+      baseGlow
+        .roundRect(
+          baseBounds.x,
+          baseBounds.y,
+          baseBounds.width,
+          baseBounds.height,
+          14,
+        )
+        .stroke({
+          color: playerColor,
+          width: 3,
+          alpha: 0.15 + breath * 0.28,
+        })
+      baseBoard.addChild(baseGlow)
     }
   }
 

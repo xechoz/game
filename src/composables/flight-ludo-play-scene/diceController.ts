@@ -33,8 +33,7 @@ export function createDiceController(options: DiceControllerOptions) {
   const diceLandingSquash = ref(0)
   const diceResultPop = ref(0)
   const diceIdlePulse = ref(0)
-  const diceIdleShake = ref(0)
-  const diceIdleLift = ref(0)
+  const idleRipple = ref(0)
   const isRolling = ref(false)
 
   let rollTimer: number = -1
@@ -71,8 +70,7 @@ export function createDiceController(options: DiceControllerOptions) {
     diceLandingSquash.value = 0
     diceResultPop.value = 0
     diceIdlePulse.value = 0
-    diceIdleShake.value = 0
-    diceIdleLift.value = 0
+    idleRipple.value = 0
   }
 
   function resetDiceState() {
@@ -121,11 +119,10 @@ export function createDiceController(options: DiceControllerOptions) {
 
       if (diceIdleLastRender === 0 || now - diceIdleLastRender >= 80) {
         const elapsed = now - diceIdleStart
-        diceIdleShake.value = Math.sin(elapsed / 140)
-        diceIdleLift.value = Math.sin(elapsed / 320) * 2.6
         diceIdlePulse.value = 0.5 + 0.5 * Math.sin(elapsed / 240)
+        idleRipple.value = (elapsed % 1500) / 1500
         diceIdleLastRender = now
-        options.syncDiceScene()
+        options.renderScene()
       }
 
       diceIdleFrameId = window.requestAnimationFrame(tick)
@@ -285,8 +282,7 @@ export function createDiceController(options: DiceControllerOptions) {
     diceLandingSquash,
     diceResultPop,
     diceIdlePulse,
-    diceIdleShake,
-    diceIdleLift,
+    idleRipple,
     isRolling,
     getDiceDisplayValue,
     clearRollTimers,

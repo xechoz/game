@@ -169,8 +169,7 @@ export function useFlightLudoPlayScene(options: UseFlightLudoPlaySceneOptions) {
         diceLandingSquash: diceController.diceLandingSquash.value,
         diceResultPop: diceController.diceResultPop.value,
         diceIdlePulse: diceController.diceIdlePulse.value,
-        diceIdleShake: diceController.diceIdleShake.value,
-        diceIdleLift: diceController.diceIdleLift.value,
+        idleRipple: diceController.idleRipple.value,
         getDiceDisplayValue: diceController.getDiceDisplayValue,
       },
       move: {
@@ -210,8 +209,7 @@ export function useFlightLudoPlayScene(options: UseFlightLudoPlaySceneOptions) {
         diceLandingSquash: diceController.diceLandingSquash.value,
         diceResultPop: diceController.diceResultPop.value,
         diceIdlePulse: diceController.diceIdlePulse.value,
-        diceIdleShake: diceController.diceIdleShake.value,
-        diceIdleLift: diceController.diceIdleLift.value,
+        idleRipple: diceController.idleRipple.value,
         getDiceDisplayValue: diceController.getDiceDisplayValue,
       },
       move: {
