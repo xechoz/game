@@ -10,10 +10,24 @@ import { defineAsyncComponent, ref } from 'vue'
 
 import PrepareScreen from './components/game/PrepareScreen.vue'
 import { type AppPage } from './composables/useFlightLudoPlayScene'
-import { type BoardPresetId, type GameMode } from './game'
+import {
+  BOARD_PRESETS,
+  DEFAULT_BOARD_PRESET_ID,
+  type BoardPresetId,
+  type GameMode,
+} from './game'
 
 const assetBase = import.meta.env.BASE_URL
 const appBg = `${assetBase}prepare-bg.png`
+const presetStorageKey = 'flightLudo.boardPreset'
+
+function loadSavedPreset(): BoardPresetId {
+  const saved = localStorage.getItem(presetStorageKey)
+  if (saved && saved in BOARD_PRESETS) {
+    return saved as BoardPresetId
+  }
+  return DEFAULT_BOARD_PRESET_ID
+}
 
 // 懒加载（分包）：PlayScreen.Content 与 ResultScreen 只在实际进入时下载
 const loadResultScreen = () => import('./components/game/ResultScreen.vue')
@@ -25,7 +39,7 @@ const PlayPage = defineAsyncComponent(loadPlayPage)
 // 全局配置与页面状态
 const mode = ref<GameMode>(1)
 const piecesPerPlayer = ref(4)
-const boardPresetId = ref<BoardPresetId>('tiny-3')
+const boardPresetId = ref<BoardPresetId>(loadSavedPreset())
 const page = ref<AppPage>('prepare')
 const autoPlayMode = ref(true)
 const winnerName = ref('')
@@ -56,6 +70,7 @@ function setPiecesPerPlayer(nextCount: number) {
 
 function setBoardPresetId(nextBoardPresetId: BoardPresetId) {
   boardPresetId.value = nextBoardPresetId
+  localStorage.setItem(presetStorageKey, nextBoardPresetId)
 }
 
 // 对局出现胜利者：记录获胜信息并切到结果页

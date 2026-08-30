@@ -397,6 +397,15 @@ const modeOptions = computed(() => [
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+.select-card:active {
+  transform: scale(0.97);
+}
+
+.select-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 72%, white);
+  outline-offset: 2px;
+}
+
 .select-card.active {
   border-color: color-mix(in srgb, var(--accent) 62%, white);
   box-shadow:
