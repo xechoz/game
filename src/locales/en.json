@@ -24,6 +24,7 @@
   "normalMode": "Normal mode",
   "hellMode": "Hell mode",
   "difficultyMode": "Difficulty mode",
+  "difficultyChanged": "Switched to {name}. Starting a new round.",
   "backToPrepare": "Back to prepare",
   "rollCanvas": "Flight chess game canvas",
   "playAgain": "Play again",

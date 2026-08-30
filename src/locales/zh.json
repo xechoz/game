@@ -24,6 +24,7 @@
   "normalMode": "正常模式",
   "hellMode": "地狱模式",
   "difficultyMode": "难度模式",
+  "difficultyChanged": "已切换至{name}，本局重新开始",
   "backToPrepare": "返回准备",
   "rollCanvas": "飞行棋游戏画布",
   "playAgain": "再来一次",

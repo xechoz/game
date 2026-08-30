@@ -31,24 +31,40 @@ const difficultyOptions = computed(() => [
     value: 'tiny-3' as const,
     title: t('quickMode'),
     hint: t('stepsPerEdge', { steps: getBoardPreset('tiny-3').stepsPerEdge }),
-    accent: '#ffb347',
-    image: `${assetBase}difficulty/quick-mode.png`,
+    image: `${assetBase}difficulty/moon-1.png`,
   },
   {
     value: 'normal-5' as const,
     title: t('normalMode'),
     hint: t('stepsPerEdge', { steps: getBoardPreset('normal-5').stepsPerEdge }),
-    accent: '#5f9cff',
-    image: `${assetBase}difficulty/normal-mode.png`,
+    image: `${assetBase}difficulty/moon-2.png`,
   },
   {
     value: 'hell-7' as const,
     title: t('hellMode'),
     hint: t('stepsPerEdge', { steps: getBoardPreset('hell-7').stepsPerEdge }),
-    accent: '#ef4444',
-    image: `${assetBase}difficulty/hell-mode.png`,
+    image: `${assetBase}difficulty/moon-3.png`,
   },
 ])
+
+const toastMessage = ref('')
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+function showToast(message: string) {
+  toastMessage.value = message
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toastMessage.value = ''
+  }, 2500)
+}
+
+function handleDifficultyChange(
+  option: (typeof difficultyOptions.value)[number],
+) {
+  if (props.boardPresetId === option.value) return
+  emit('update:board-preset-id', option.value)
+  showToast(t('difficultyChanged', { name: option.title }))
+}
 </script>
 
 <template>
@@ -71,20 +87,31 @@ const difficultyOptions = computed(() => [
               type="button"
               class="preset-pill"
               :class="{ active: props.boardPresetId === option.value }"
-              :style="{ '--accent': option.accent }"
-              :aria-label="option.title"
-              @click="emit('update:board-preset-id', option.value)"
+              :title="`${option.title} · ${option.hint}`"
+              :aria-label="`${option.title} · ${option.hint}`"
+              :aria-pressed="props.boardPresetId === option.value"
+              @click="handleDifficultyChange(option)"
             >
               <img
                 class="preset-image"
                 :src="option.image"
                 :alt="option.title"
               />
-              <span class="sr-only">{{ option.title }}</span>
+              <span
+                v-if="props.boardPresetId === option.value"
+                class="preset-check"
+                aria-hidden="true"
+                >✓</span
+              >
             </button>
           </div>
           <div class="play-controls-spacer" aria-hidden="true"></div>
         </div>
+        <transition name="toast">
+          <div v-if="toastMessage" class="difficulty-toast" role="status">
+            {{ toastMessage }}
+          </div>
+        </transition>
       </div>
       <div class="play-stage">
         <section
@@ -168,6 +195,36 @@ const difficultyOptions = computed(() => [
   height: 40px;
 }
 
+.difficulty-toast {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(13, 40, 78, 0.9);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 12px 26px rgba(13, 40, 78, 0.35);
+  pointer-events: none;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+}
+
 .back-action {
   width: 56px;
   height: 40px;
@@ -200,7 +257,7 @@ const difficultyOptions = computed(() => [
   width: 50px;
   height: 50px;
   min-height: 50px;
-  border: 1px solid rgba(255, 255, 255, 0.95);
+  border: none;
   border-radius: 14px;
   padding: 0;
   overflow: hidden;
@@ -208,70 +265,54 @@ const difficultyOptions = computed(() => [
   box-shadow:
     0 8px 18px rgba(41, 121, 196, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.preset-pill:hover {
+  box-shadow:
+    0 10px 22px rgba(41, 121, 196, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .preset-image {
   position: absolute;
-  inset: 4px;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
-  object-fit: cover;
-  border-radius: 10px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
   pointer-events: none;
   z-index: 1;
 }
 
-.preset-pill::before {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(6, 18, 36, 0.03), rgba(6, 18, 36, 0.1)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-}
-
-.preset-pill::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 10px;
-  background:
-    radial-gradient(
-      circle at 50% 22%,
-      rgba(255, 255, 255, 0.24),
-      transparent 30%
-    ),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 55%);
-  pointer-events: none;
-}
-
 .preset-pill.active {
-  border-color: color-mix(in srgb, var(--accent) 62%, white);
+  overflow: visible;
+  background: linear-gradient(180deg, #7fc4ff, #57b7ff);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.15) inset,
-    0 10px 18px color-mix(in srgb, var(--accent) 16%, rgba(0, 117, 222, 0.1));
-  transform: translateY(-1px);
+    0 10px 22px rgba(47, 127, 242, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-.preset-pill.active::before {
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent);
-}
-
-.sr-only {
+.preset-check {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  color: #2f7ff2;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(47, 127, 242, 0.4);
+  z-index: 2;
 }
 
 .play-canvas-shell {
@@ -335,12 +376,6 @@ const difficultyOptions = computed(() => [
     height: 50px;
     min-height: 50px;
     border-radius: 14px;
-  }
-
-  .preset-pill::before,
-  .preset-pill::after {
-    inset: 4px;
-    border-radius: 10px;
   }
 
   .circle-action {
