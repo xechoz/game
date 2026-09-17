@@ -3,13 +3,15 @@
  * 游戏页 UI 壳：canvas 挂载点（PIXI 渲染到此处）+ 顶栏（返回按钮 / 难度切换）
  * 通过 defineExpose 暴露 canvasEl 给上层 composable 使用
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from '../../i18n'
 
 import { getBoardPreset, type BoardPresetId } from '../../game'
 
 const props = defineProps<{
   boardPresetId: BoardPresetId
+  gameActive: boolean
+  hasRolledOnce: boolean
 }>()
 
 const assetBase = import.meta.env.BASE_URL
@@ -50,6 +52,35 @@ const difficultyOptions = computed(() => [
 const toastMessage = ref('')
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 
+// 顶栏防误触：对局进行中顶栏默认半透明锁定，点击顶栏区域唤醒，
+// 唤醒后有固定 10s 窗口（操作不延长），超时自动回到锁定态；
+// 首次掷骰或对局重开/结束时立即回锁
+const TOPBAR_ACTIVE_TIMEOUT_MS = 10_000
+const topbarActive = ref(false)
+let topbarActiveTimer: ReturnType<typeof setTimeout> | undefined
+const topbarLocked = computed(() => props.gameActive && !topbarActive.value)
+
+function wakeTopbar() {
+  if (!props.gameActive || topbarActive.value) return
+  topbarActive.value = true
+  topbarActiveTimer = setTimeout(() => {
+    topbarActive.value = false
+  }, TOPBAR_ACTIVE_TIMEOUT_MS)
+}
+
+watch(
+  () => [props.gameActive, props.hasRolledOnce] as const,
+  () => {
+    topbarActive.value = false
+    clearTimeout(topbarActiveTimer)
+  },
+)
+
+onBeforeUnmount(() => {
+  clearTimeout(toastTimer)
+  clearTimeout(topbarActiveTimer)
+})
+
 function showToast(message: string) {
   toastMessage.value = message
   clearTimeout(toastTimer)
@@ -70,12 +101,20 @@ function handleDifficultyChange(
 <template>
   <section class="page page-play">
     <div class="grid play-grid">
-      <div class="play-topbar">
-        <div class="play-controls-row">
+      <div
+        class="play-topbar"
+        :class="{ 'topbar-locked': topbarLocked }"
+      >
+        <div
+          class="play-controls-row"
+          :title="topbarLocked ? t('topbarLockedHint') : undefined"
+          @click="wakeTopbar"
+        >
           <button
             class="circle-action secondary back-action"
             type="button"
             :aria-label="t('backToPrepare')"
+            :aria-disabled="topbarLocked"
             @click="emit('back')"
           >
             <img class="back-icon" :src="backButtonImage" alt="" />
@@ -90,6 +129,7 @@ function handleDifficultyChange(
               :title="`${option.title} · ${option.hint}`"
               :aria-label="`${option.title} · ${option.hint}`"
               :aria-pressed="props.boardPresetId === option.value"
+              :aria-disabled="topbarLocked"
               @click="handleDifficultyChange(option)"
             >
               <img
@@ -150,7 +190,7 @@ function handleDifficultyChange(
     100%,
     760px,
     calc(100dvw - 20px),
-    calc((100dvh - 212px) / 1.5)
+    calc((100dvh - 128px) / 1.5)
   );
   display: grid;
   gap: 14px;
@@ -162,9 +202,21 @@ function handleDifficultyChange(
 }
 
 .play-topbar {
-  position: static;
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   width: min(100%, var(--play-canvas-width));
   z-index: 3;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.play-topbar.topbar-locked {
+  opacity: 0.45;
+}
+
+.play-topbar.topbar-locked button {
   pointer-events: none;
 }
 
@@ -356,7 +408,7 @@ function handleDifficultyChange(
   }
 
   .play-grid {
-    --play-canvas-width: min(calc(100dvw - 12px), calc((100dvh - 176px) / 1.5));
+    --play-canvas-width: min(calc(100dvw - 12px), calc((100dvh - 110px) / 1.5));
     max-width: 100%;
     gap: 12px;
   }

@@ -26,6 +26,7 @@
   "difficultyMode": "Difficulty mode",
   "difficultyChanged": "Switched to {name}. Starting a new round.",
   "backToPrepare": "Back to prepare",
+  "topbarLockedHint": "Click the bar to wake (locks again in 10s)",
   "rollCanvas": "Flight chess game canvas",
   "playAgain": "Play again",
   "winnerPlaneAlt": "{winnerName} plane",

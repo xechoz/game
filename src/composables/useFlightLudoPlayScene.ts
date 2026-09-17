@@ -66,6 +66,16 @@ export function useFlightLudoPlayScene(options: UseFlightLudoPlaySceneOptions) {
       ? null
       : game.value.players[game.value.winnerIndex],
   )
+  // 对局会话进行中（含刚开局尚未走子）：用于顶栏防误触锁定
+  const gameActive = computed(() => game.value.winnerIndex === -1)
+  // 本局是否已掷过骰子（首次掷骰后顶栏立即回锁；dice 每回合重置为 0，需持久标记）
+  const hasRolledOnce = ref(false)
+  watch(
+    () => game.value.dice,
+    (value) => {
+      if (value > 0) hasRolledOnce.value = true
+    },
+  )
   const boardPreset = computed(() => getBoardPreset(game.value.boardPresetId))
   const boardRenderLayout = computed<BoardRenderLayout>(() =>
     getBoardRenderLayout(game.value.boardPresetId),
@@ -423,6 +433,7 @@ export function useFlightLudoPlayScene(options: UseFlightLudoPlaySceneOptions) {
       piecesPerPlayer: clampPiecesPerPlayer(options.piecesPerPlayer.value),
       boardPresetId: options.boardPresetId.value,
     })
+    hasRolledOnce.value = false
     moveController.clearMovePreview()
     clearTimers()
     diceController.resetDiceState()
@@ -557,6 +568,8 @@ export function useFlightLudoPlayScene(options: UseFlightLudoPlaySceneOptions) {
     currentPlayer,
     legalPieces,
     winner,
+    gameActive,
+    hasRolledOnce,
     restartGame,
     startGame,
     replayGame,

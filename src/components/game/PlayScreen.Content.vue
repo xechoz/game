@@ -39,7 +39,8 @@ const playScreenRef = ref<{ canvasEl: HTMLDivElement | null } | null>(null)
 const { t } = useI18n()
 
 // 接线总调度：props 通过 toRef 保持响应式，页面切换/配置变化都能驱动重开
-const { winner, startGame, goToPrepare } = useFlightLudoPlayScene({
+const { winner, gameActive, hasRolledOnce, startGame, goToPrepare } =
+  useFlightLudoPlayScene({
   page,
   mode: toRef(props, 'mode'),
   piecesPerPlayer: toRef(props, 'piecesPerPlayer'),
@@ -81,6 +82,8 @@ onMounted(() => {
   <PlayScreen
     ref="playScreenRef"
     :board-preset-id="boardPresetId"
+    :game-active="gameActive"
+    :has-rolled-once="hasRolledOnce"
     @back="handleBack"
     @winner-change="emit('winner-change', $event)"
     @update:board-preset-id="handleBoardPresetId"
