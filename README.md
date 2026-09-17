@@ -38,7 +38,7 @@ This repository is configured to deploy via GitHub Actions to GitHub Pages on ev
 
 After the first successful deployment, the site will be available at:
 
-`https://xechoz.github.io/vue-pixi-game-template/`
+`https://xechoz.github.io/game/`
 
 ## How to use as a template
 
