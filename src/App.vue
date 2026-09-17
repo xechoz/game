@@ -9,6 +9,7 @@
 import { defineAsyncComponent, ref } from 'vue'
 
 import PrepareScreen from './components/game/PrepareScreen.vue'
+import { useI18n } from './i18n'
 import { type AppPage } from './composables/useFlightLudoPlayScene'
 import {
   BOARD_PRESETS,
@@ -42,6 +43,27 @@ const page = ref<AppPage>('prepare')
 const autoPlayMode = ref(true)
 const winnerName = ref('')
 const winnerIndex = ref(0)
+const winnerColor = ref('#ef4444')
+
+const { t } = useI18n()
+
+// 开发环境专用的结果页预览入口（生产构建下整个按钮与逻辑会被 tree-shake）
+const isDev = import.meta.env.DEV
+const previewPlayers = [
+  { key: 'red', color: '#ef4444' },
+  { key: 'yellow', color: '#f59e0b' },
+  { key: 'blue', color: '#3b82f6' },
+  { key: 'green', color: '#22c55e' },
+] as const
+
+function showResultPreview() {
+  const index = Math.floor(Math.random() * previewPlayers.length)
+  const player = previewPlayers[index]
+  winnerName.value = t(`${player.key}Player`)
+  winnerColor.value = player.color
+  winnerIndex.value = index
+  page.value = 'result'
+}
 
 // 准备页点击开始：预加载 play 分包后再切页，避免白屏
 async function startGame() {
@@ -79,6 +101,7 @@ function handleWinnerChange(nextWinner: {
 }) {
   winnerName.value = nextWinner.name
   winnerIndex.value = nextWinner.index
+  winnerColor.value = nextWinner.color
   page.value = 'result'
 }
 </script>
@@ -109,9 +132,19 @@ function handleWinnerChange(nextWinner: {
       v-if="page === 'result'"
       :winner-name="winnerName"
       :winner-index="winnerIndex"
+      :winner-color="winnerColor"
       @replay="replayGame"
       @prepare="goToPrepare"
     />
+
+    <button
+      v-if="isDev"
+      class="dev-result-button"
+      type="button"
+      @click="showResultPreview"
+    >
+      {{ t('testResultButton') }}
+    </button>
   </main>
 </template>
 
@@ -226,6 +259,32 @@ function handleWinnerChange(nextWinner: {
     1280px 720px 0 0 rgba(255, 255, 255, 0.7),
     1720px 560px 0 1px rgba(255, 255, 255, 0.75);
   animation: shell-breathe 8s ease-in-out infinite alternate;
+}
+
+.dev-result-button {
+  position: fixed;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 40;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(13, 40, 78, 0.82);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  opacity: 0.82;
+  box-shadow: 0 10px 24px rgba(13, 40, 78, 0.3);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.dev-result-button:hover {
+  opacity: 1;
+  transform: translateY(-1px);
 }
 
 @keyframes shell-breathe {
