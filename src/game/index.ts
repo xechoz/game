@@ -26,7 +26,6 @@ export {
   getCurrentPlayer,
   getHomeLaneIndex,
   getLegalPieceIds,
-  getPieceLabel,
   getPieceLocation,
   getPlayerFinishedCount,
   getPlayerTrackCount,

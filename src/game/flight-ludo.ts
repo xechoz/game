@@ -13,7 +13,6 @@
  *  - trackLength+1 ~ finish → 进入终点跑道（home），不再与外圈交互
  *  - progress >= finishStep → 到达终点（finished）
  */
-import { t } from '../i18n'
 import {
   DEFAULT_BOARD_PRESET_ID,
   getBoardPreset,
@@ -72,7 +71,6 @@ export interface GameState {
   turnPointer: number
   currentPlayerIndex: number
   dice: number
-  status: string
   winnerIndex: number
   turnCount: number
   legalPieceIds: string[]
@@ -88,7 +86,6 @@ export interface MoveResult {
   victory: boolean
   capturedCount: number
   capturedPieceIds: string[]
-  message: string
 }
 
 function getPresetId(boardPresetId?: BoardPresetId): BoardPresetId {
@@ -164,21 +161,6 @@ function createPlayerDefs(boardPresetId: BoardPresetId): PlayerMeta[] {
   ]
 }
 
-function getPlayerDisplayName(player: Pick<PlayerMeta, 'name'>): string {
-  switch (player.name) {
-    case 'red':
-      return t('redPlayer')
-    case 'yellow':
-      return t('yellowPlayer')
-    case 'blue':
-      return t('bluePlayer')
-    case 'green':
-      return t('greenPlayer')
-    default:
-      return player.name
-  }
-}
-
 export const PLAYER_DEFS: PlayerMeta[] = createPlayerDefs(activeBoardPreset.id)
 export const SAFE_CELLS = activeBoardPreset.safeCells
 export const FLIGHT_JUMPS = new Map<number, number>(
@@ -242,7 +224,6 @@ export function createGame(settings: GameSettings): GameState {
     turnPointer: 0,
     currentPlayerIndex: turnOrder[0] ?? 0,
     dice: 0,
-    status: t('beginGame'),
     winnerIndex: -1,
     turnCount: 1,
     legalPieceIds: [],
@@ -383,29 +364,6 @@ export function getLegalPieceIds(state: GameState): string[] {
     .map((piece) => piece.id)
 }
 
-export function getPieceLabel(
-  piece: PieceState,
-  boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID,
-): string {
-  const boardPreset = getPresetForId(boardPresetId)
-  const finishStep = boardPreset.trackLength + boardPreset.homeSteps
-
-  if (piece.progress <= 0) return t('base')
-  if (piece.progress <= boardPreset.trackLength) {
-    return t('track', {
-      progress: piece.progress,
-      trackLength: boardPreset.trackLength,
-    })
-  }
-  if (piece.progress < finishStep) {
-    return t('home', {
-      progress: piece.progress - boardPreset.trackLength,
-      homeSteps: boardPreset.homeSteps,
-    })
-  }
-  return t('completed')
-}
-
 /**
  * 摇骰入口（规则层）。
  *  - 掷出点数并写入 state.dice
@@ -416,14 +374,12 @@ export function rollDice(state: GameState): {
   rolled: boolean
   skipped: boolean
   advancePending: boolean
-  message: string
 } {
   if (state.winnerIndex !== -1) {
     return {
       rolled: false,
       skipped: false,
       advancePending: false,
-      message: t('gameEnded'),
     }
   }
 
@@ -432,7 +388,6 @@ export function rollDice(state: GameState): {
       rolled: false,
       skipped: false,
       advancePending: false,
-      message: t('diceAlreadyRolled'),
     }
   }
 
@@ -443,30 +398,18 @@ export function rollDice(state: GameState): {
   const legalPieces = getLegalPieceIds(state)
   state.legalPieceIds = legalPieces
   if (legalPieces.length === 0) {
-    const rolled = state.dice
     advanceTurn(state)
-    state.status = t('playerRollNone', {
-      playerName: getPlayerDisplayName(player),
-      rolled,
-      nextPlayerName: getPlayerDisplayName(getCurrentPlayer(state)),
-    })
     return {
       rolled: true,
       skipped: true,
       advancePending: false,
-      message: state.status,
     }
   }
 
-  state.status = t('playerRolledChoosePiece', {
-    playerName: getPlayerDisplayName(player),
-    dice: state.dice,
-  })
   return {
     rolled: true,
     skipped: false,
     advancePending: false,
-    message: state.status,
   }
 }
 
@@ -492,7 +435,6 @@ export function movePiece(
       victory: false,
       capturedCount: 0,
       capturedPieceIds: [],
-      message: t('moveBeforeRoll'),
     }
   }
 
@@ -503,7 +445,6 @@ export function movePiece(
       victory: false,
       capturedCount: 0,
       capturedPieceIds: [],
-      message: t('gameEnded'),
     }
   }
 
@@ -519,7 +460,6 @@ export function movePiece(
       victory: false,
       capturedCount: 0,
       capturedPieceIds: [],
-      message: t('onlyCurrentPlayerPiece'),
     }
   }
 
@@ -530,7 +470,6 @@ export function movePiece(
       victory: false,
       capturedCount: 0,
       capturedPieceIds: [],
-      message: t('cannotMovePiece'),
     }
   }
 
@@ -545,7 +484,6 @@ export function movePiece(
   }
 
   // 跳子：落点若是跳子点，沿映射连续顺移，直到落回普通格子或离开外圈
-  let jumped = false
   while (piece.progress >= 1 && piece.progress <= boardPreset.trackLength) {
     const landingCell = getTrackCellIndex(player, piece)
     const jumpTarget = flightJumps.get(landingCell)
@@ -553,7 +491,6 @@ export function movePiece(
 
     const jumpDelta = jumpTarget - landingCell
     piece.progress += jumpDelta
-    jumped = true
   }
 
   // 吃子：落点在外圈且不是安全格时，同格敌方棋子全部送回停机坪
@@ -602,68 +539,33 @@ export function movePiece(
 
   if (finishedCount === player.pieces.length) {
     state.winnerIndex = player.index
-    state.status =
-      captured > 0
-        ? t('playerCapturedVictory', {
-            playerName: getPlayerDisplayName(player),
-            captured,
-          })
-        : t('playerVictory', {
-            playerName: getPlayerDisplayName(player),
-          })
     return {
       moved: true,
       advancePending: false,
       victory: true,
       capturedCount: captured,
       capturedPieceIds,
-      message: state.status,
     }
   }
 
   // 掷出 6：不推进回合，同一玩家可继续走（advancePending=false）
   if (rolledSix) {
-    state.status =
-      captured > 0
-        ? t('playerCapturedContinue', {
-            playerName: getPlayerDisplayName(player),
-            captured,
-          })
-        : t('playerCanContinue', {
-            playerName: getPlayerDisplayName(player),
-          })
     return {
       moved: true,
       advancePending: false,
       victory: false,
       capturedCount: captured,
       capturedPieceIds,
-      message: state.status,
     }
   }
 
   // 普通移动：本次走完，需要推进回合到下一玩家
-  state.status =
-    captured > 0
-      ? t('playerCapturedNext', {
-          playerName: getPlayerDisplayName(player),
-          captured,
-        })
-      : jumped
-        ? t('playerFlewNext', {
-            playerName: getPlayerDisplayName(player),
-          })
-        : t('playerMovedNext', {
-            playerName: getPlayerDisplayName(player),
-          })
-
   return {
     moved: true,
     advancePending: true,
     victory: false,
     capturedCount: captured,
     capturedPieceIds,
-    message: state.status,
   }
 }
 
@@ -676,9 +578,6 @@ export function advanceTurn(state: GameState): void {
   state.turnPointer = (state.turnPointer + 1) % state.turnOrder.length
   state.currentPlayerIndex = state.turnOrder[state.turnPointer] ?? 0
   state.turnCount += 1
-  state.status = t('nextPlayerRoll', {
-    playerName: getPlayerDisplayName(getCurrentPlayer(state)),
-  })
 }
 
 export function resetGame(settings: GameSettings): GameState {

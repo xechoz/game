@@ -32,38 +32,31 @@ function selectMode(value: 1 | 2 | 3 | 4) {
 }
 
 const playerAvatarSources = [
-  { src: `${assetBase}player-red.png`, key: 'red' },
-  { src: `${assetBase}player-blue.png`, key: 'blue' },
-  { src: `${assetBase}player-green.png`, key: 'green' },
-  { src: `${assetBase}player-yellow.png`, key: 'yellow' },
+  `${assetBase}player-red.png`,
+  `${assetBase}player-blue.png`,
+  `${assetBase}player-green.png`,
+  `${assetBase}player-yellow.png`,
 ]
-
-const playerAvatars = computed(() =>
-  playerAvatarSources.map((item) => ({
-    src: item.src,
-    alt: t(`${item.key}PlayerAvatarAlt`),
-  })),
-)
 
 const modeOptions = computed(() => [
   {
     value: 1 as const,
-    avatars: playerAvatars.value.slice(0, 1),
+    avatars: playerAvatarSources.slice(0, 1),
     accent: '#FD725B',
   },
   {
     value: 2 as const,
-    avatars: playerAvatars.value.slice(0, 2),
+    avatars: playerAvatarSources.slice(0, 2),
     accent: '#0F99C0',
   },
   {
     value: 3 as const,
-    avatars: playerAvatars.value.slice(0, 3),
+    avatars: playerAvatarSources.slice(0, 3),
     accent: '#80BA48',
   },
   {
     value: 4 as const,
-    avatars: playerAvatars.value.slice(0, 4),
+    avatars: playerAvatarSources.slice(0, 4),
     accent: '#FCD850',
   },
 ])
@@ -87,7 +80,6 @@ const modeOptions = computed(() => [
         :key="option.value"
         :class="['select-card', `card-${option.avatars.length}`]"
         type="button"
-        :aria-label="t('playerMode', { count: option.value })"
         :style="{ '--accent': option.accent }"
         @click="selectMode(option.value)"
       >
@@ -95,10 +87,10 @@ const modeOptions = computed(() => [
         <div class="avatar-stack" :class="`stack-${option.avatars.length}`">
           <img
             v-for="avatar in option.avatars"
-            :key="avatar.src"
+            :key="avatar"
             class="avatar-icon"
-            :src="avatar.src"
-            :alt="avatar.alt"
+            :src="avatar"
+            alt=""
           />
         </div>
         <div class="card-footer">
