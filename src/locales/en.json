@@ -40,6 +40,7 @@
   "greenPlayerAvatarAlt": "Green player avatar",
   "yellowPlayerAvatarAlt": "Yellow player avatar",
   "playerMode": "{count}-player mode",
+  "prepareTitle": "Choose number of players",
   "stepsPerEdge": "{steps} steps/edge",
   "redPlayer": "Red player",
   "yellowPlayer": "Yellow player",

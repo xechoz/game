@@ -7,7 +7,7 @@ import { computed } from 'vue'
 import { useI18n } from '../../i18n'
 import { createSceneAudio } from '../../composables/flight-ludo-play-scene/sceneAudio'
 
-const props = defineProps<{
+defineProps<{
   mode: 1 | 2 | 3 | 4
   piecesPerPlayer: number
 }>()
@@ -64,7 +64,7 @@ const modeOptions = computed(() => [
   {
     value: 4 as const,
     avatars: playerAvatars.value.slice(0, 4),
-    accent: '#FCDC59',
+    accent: '#FCD850',
   },
 ])
 </script>
@@ -80,22 +80,18 @@ const modeOptions = computed(() => [
       <span class="dec-dot dot-b"></span>
       <span class="dec-dot dot-c"></span>
     </div>
+    <h1 class="prepare-title">{{ t('prepareTitle') }}</h1>
     <div class="mode-grid">
       <button
         v-for="option in modeOptions"
         :key="option.value"
-        :class="[
-          'select-card',
-          `card-${option.avatars.length}`,
-          { active: props.mode === option.value },
-        ]"
+        :class="['select-card', `card-${option.avatars.length}`]"
         type="button"
         :aria-label="t('playerMode', { count: option.value })"
         :style="{ '--accent': option.accent }"
         @click="selectMode(option.value)"
       >
         <div class="card-topbar"></div>
-        <div class="card-glow"></div>
         <div class="avatar-stack" :class="`stack-${option.avatars.length}`">
           <img
             v-for="avatar in option.avatars"
@@ -224,12 +220,23 @@ const modeOptions = computed(() => [
   border: 0;
 }
 
+.prepare-title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(15, 42, 74, 0.82);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
 .mode-grid {
   position: relative;
   z-index: 1;
   width: 100%;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -310,8 +317,7 @@ const modeOptions = computed(() => [
 }
 
 .card-topbar,
-.card-footer,
-.card-glow {
+.card-footer {
   position: absolute;
   pointer-events: none;
 }
@@ -346,6 +352,11 @@ const modeOptions = computed(() => [
   box-shadow: 0 10px 20px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.card-4 .mode-badge {
+  background: linear-gradient(180deg, #fcd850, #c86802);
+  text-shadow: 0 1px 2px rgba(120, 60, 0, 0.5);
+}
+
 .card-footer {
   left: 0;
   right: 0;
@@ -353,24 +364,6 @@ const modeOptions = computed(() => [
   display: grid;
   place-items: center;
   z-index: 2;
-}
-
-.card-glow {
-  inset: 14px;
-  border-radius: 24px;
-  background:
-    radial-gradient(
-      circle at center,
-      color-mix(in srgb, var(--accent) 24%, transparent),
-      transparent 58%
-    ),
-    radial-gradient(
-      circle at 50% 36%,
-      rgba(255, 255, 255, 0.12),
-      transparent 42%
-    );
-  opacity: 0;
-  transition: opacity 0.18s ease;
 }
 
 .select-card:hover {
@@ -389,23 +382,6 @@ const modeOptions = computed(() => [
 .select-card:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent) 72%, white);
   outline-offset: 2px;
-}
-
-.select-card.active {
-  border-color: color-mix(in srgb, var(--accent) 62%, white);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.15) inset,
-    0 22px 42px color-mix(in srgb, var(--accent) 20%, rgba(0, 117, 222, 0.12)),
-    0 12px 20px rgba(0, 31, 61, 0.08);
-  filter: saturate(1.08);
-}
-
-.select-card.active .card-glow {
-  opacity: 1;
-}
-
-.select-card.active::after {
-  content: '';
 }
 
 .avatar-stack {
@@ -486,9 +462,13 @@ const modeOptions = computed(() => [
     gap: 12px;
   }
 
+  .prepare-title {
+    font-size: 20px;
+  }
+
   .mode-grid {
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 14px;
   }
 
   .select-card {

@@ -40,6 +40,7 @@
   "greenPlayerAvatarAlt": "绿色玩家头像",
   "yellowPlayerAvatarAlt": "黄色玩家头像",
   "playerMode": "{count}人模式",
+  "prepareTitle": "选择玩家人数",
   "stepsPerEdge": "{steps}步/边",
   "redPlayer": "红方",
   "yellowPlayer": "黄方",
