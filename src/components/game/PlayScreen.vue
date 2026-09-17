@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+/**
+ * 游戏页 UI 壳：canvas 挂载点（PIXI 渲染到此处）+ 顶栏（返回按钮 / 难度切换）
+ * 通过 defineExpose 暴露 canvasEl 给上层 composable 使用
+ */
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from '../../i18n'
 
 import { getBoardPreset, type BoardPresetId } from '../../game'
 
 const props = defineProps<{
   boardPresetId: BoardPresetId
+  gameActive: boolean
+  hasRolledOnce: boolean
 }>()
 
 const assetBase = import.meta.env.BASE_URL
@@ -13,64 +20,145 @@ const canvasEl = ref<HTMLDivElement | null>(null)
 
 defineExpose({ canvasEl })
 
-const emit = defineEmits<{
-  (event: 'back'): void
-  (event: 'update:board-preset-id', value: BoardPresetId): void
-}>()
+const emit = defineEmits({
+  back: null,
+  'winner-change': null,
+  'update:board-preset-id': null,
+})
 
-const difficultyOptions = [
+const { t } = useI18n()
+
+const difficultyOptions = computed(() => [
   {
-    value: 'tiny-4' as const,
-    title: '快速模式',
-    hint: `${getBoardPreset('tiny-4').stepsPerSide}步/边`,
-    accent: '#ffb347',
-    image: `${assetBase}difficulty/quick-mode.png`,
+    value: 'tiny-3' as const,
+    title: t('quickMode'),
+    hint: t('stepsPerEdge', { steps: getBoardPreset('tiny-3').stepsPerEdge }),
+    image: `${assetBase}difficulty/moon-1.png`,
   },
   {
-    value: 'normal-6' as const,
-    title: '正常模式',
-    hint: `${getBoardPreset('normal-6').stepsPerSide}步/边`,
-    accent: '#5f9cff',
-    image: `${assetBase}difficulty/normal-mode.png`,
+    value: 'normal-5' as const,
+    title: t('normalMode'),
+    hint: t('stepsPerEdge', { steps: getBoardPreset('normal-5').stepsPerEdge }),
+    image: `${assetBase}difficulty/moon-2.png`,
   },
   {
-    value: 'hell-8' as const,
-    title: '地狱模式',
-    hint: `${getBoardPreset('hell-8').stepsPerSide}步/边`,
-    accent: '#ef4444',
-    image: `${assetBase}difficulty/hell-mode.png`,
+    value: 'hell-7' as const,
+    title: t('hellMode'),
+    hint: t('stepsPerEdge', { steps: getBoardPreset('hell-7').stepsPerEdge }),
+    image: `${assetBase}difficulty/moon-3.png`,
   },
-]
+])
+
+const toastMessage = ref('')
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+// 顶栏防误触：对局进行中顶栏默认半透明锁定，点击顶栏区域唤醒，
+// 唤醒后有固定 10s 窗口（操作不延长），超时自动回到锁定态；
+// 首次掷骰或对局重开/结束时立即回锁
+const TOPBAR_ACTIVE_TIMEOUT_MS = 10_000
+const topbarActive = ref(false)
+let topbarActiveTimer: ReturnType<typeof setTimeout> | undefined
+const topbarLocked = computed(() => props.gameActive && !topbarActive.value)
+
+function wakeTopbar() {
+  if (!props.gameActive || topbarActive.value) return
+  topbarActive.value = true
+  topbarActiveTimer = setTimeout(() => {
+    topbarActive.value = false
+  }, TOPBAR_ACTIVE_TIMEOUT_MS)
+}
+
+watch(
+  () => [props.gameActive, props.hasRolledOnce] as const,
+  () => {
+    topbarActive.value = false
+    clearTimeout(topbarActiveTimer)
+  },
+)
+
+onBeforeUnmount(() => {
+  clearTimeout(toastTimer)
+  clearTimeout(topbarActiveTimer)
+})
+
+function showToast(message: string) {
+  toastMessage.value = message
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toastMessage.value = ''
+  }, 2500)
+}
+
+function handleDifficultyChange(
+  option: (typeof difficultyOptions.value)[number],
+) {
+  if (props.boardPresetId === option.value) return
+  emit('update:board-preset-id', option.value)
+  showToast(t('difficultyChanged', { name: option.title }))
+}
 </script>
 
 <template>
   <section class="page page-play">
     <div class="grid play-grid">
-      <div class="play-topbar">
-        <div class="play-controls-row">
-          <button class="circle-action secondary back-action" type="button" aria-label="返回准备" @click="emit('back')">
+      <div
+        class="play-topbar"
+        :class="{ 'topbar-locked': topbarLocked }"
+      >
+        <div
+          class="play-controls-row"
+          :title="topbarLocked ? t('topbarLockedHint') : undefined"
+          @click="wakeTopbar"
+        >
+          <button
+            class="circle-action secondary back-action"
+            type="button"
+            :aria-label="t('backToPrepare')"
+            :aria-disabled="topbarLocked"
+            @click="emit('back')"
+          >
             <img class="back-icon" :src="backButtonImage" alt="" />
           </button>
-          <div class="board-preset-row" aria-label="难度模式">
+          <div class="board-preset-row" :aria-label="t('difficultyMode')">
             <button
               v-for="option in difficultyOptions"
               :key="option.value"
               type="button"
               class="preset-pill"
               :class="{ active: props.boardPresetId === option.value }"
-              :style="{ '--accent': option.accent }"
-              :aria-label="option.title"
-              @click="emit('update:board-preset-id', option.value)"
+              :title="`${option.title} · ${option.hint}`"
+              :aria-label="`${option.title} · ${option.hint}`"
+              :aria-pressed="props.boardPresetId === option.value"
+              :aria-disabled="topbarLocked"
+              @click="handleDifficultyChange(option)"
             >
-              <img class="preset-image" :src="option.image" :alt="option.title" />
-              <span class="sr-only">{{ option.title }}</span>
+              <img
+                class="preset-image"
+                :src="option.image"
+                :alt="option.title"
+              />
+              <span
+                v-if="props.boardPresetId === option.value"
+                class="preset-check"
+                aria-hidden="true"
+                >✓</span
+              >
             </button>
           </div>
           <div class="play-controls-spacer" aria-hidden="true"></div>
         </div>
+        <transition name="toast">
+          <div v-if="toastMessage" class="difficulty-toast" role="status">
+            {{ toastMessage }}
+          </div>
+        </transition>
       </div>
       <div class="play-stage">
-        <section ref="canvasEl" class="canvas-shell play-canvas-shell" aria-label="飞行棋游戏画布" />
+        <section
+          ref="canvasEl"
+          class="canvas-shell play-canvas-shell"
+          :aria-label="t('rollCanvas')"
+        />
       </div>
     </div>
   </section>
@@ -78,46 +166,63 @@ const difficultyOptions = [
 
 <style scoped>
 .page {
-  width: min(1280px, 100%);
+  width: min(920px, calc(100% - 20px));
   margin: 0 auto;
   display: grid;
   gap: 14px;
 }
 
 .page.page-play {
-  width: 100%;
-  height: 100dvh;
+  width: min(920px, calc(100% - 20px));
+  min-height: 100dvh;
+  padding: 18px 0 22px;
   align-content: center;
+  justify-items: center;
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background: none;
+  background: transparent;
+  box-sizing: border-box;
 }
 
-
 .play-grid {
-  --play-canvas-width: min(100%, calc(100dvw - 24px), calc((100dvh - 204px) / 1.5));
+  --play-canvas-width: min(
+    100%,
+    760px,
+    calc(100dvw - 20px),
+    calc((100dvh - 128px) / 1.5)
+  );
   display: grid;
+  gap: 14px;
   place-items: center;
   position: relative;
   width: 100%;
-  height: 100%;
+  max-width: 760px;
   z-index: 1;
 }
 
 .play-topbar {
-  position: absolute;
+  position: fixed;
+  top: 14px;
   left: 50%;
-  top: calc(50% - (var(--play-canvas-width) * 0.75) - 86px);
-  width: var(--play-canvas-width);
   transform: translateX(-50%);
+  width: min(100%, var(--play-canvas-width));
   z-index: 3;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.play-topbar.topbar-locked {
+  opacity: 0.45;
+}
+
+.play-topbar.topbar-locked button {
   pointer-events: none;
 }
 
 .play-controls-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   width: 100%;
   pointer-events: auto;
@@ -126,12 +231,12 @@ const difficultyOptions = [
 .play-stage {
   position: relative;
   width: var(--play-canvas-width);
-  height: calc(var(--play-canvas-width) * 1.5);
+  aspect-ratio: 2 / 3;
 }
 
 .play-controls-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   width: 100%;
   pointer-events: auto;
@@ -140,6 +245,36 @@ const difficultyOptions = [
 .play-controls-spacer {
   width: 56px;
   height: 40px;
+}
+
+.difficulty-toast {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(13, 40, 78, 0.9);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 12px 26px rgba(13, 40, 78, 0.35);
+  pointer-events: none;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 .back-action {
@@ -174,76 +309,62 @@ const difficultyOptions = [
   width: 50px;
   height: 50px;
   min-height: 50px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: none;
   border-radius: 14px;
   padding: 0;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
-    rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.85);
   box-shadow:
-    0 8px 18px rgba(0, 31, 61, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+    0 8px 18px rgba(41, 121, 196, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.preset-pill:hover {
+  box-shadow:
+    0 10px 22px rgba(41, 121, 196, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .preset-image {
   position: absolute;
-  inset: 4px;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
-  object-fit: cover;
-  border-radius: 10px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
   pointer-events: none;
   z-index: 1;
 }
 
-.preset-pill::before {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(6, 18, 36, 0.08), rgba(6, 18, 36, 0.16)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.preset-pill::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 10px;
-  background:
-    radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.24), transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 55%);
-  pointer-events: none;
-}
-
 .preset-pill.active {
-  border-color: color-mix(in srgb, var(--accent) 62%, white);
+  overflow: visible;
+  background: linear-gradient(180deg, #7fc4ff, #57b7ff);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.15) inset,
-    0 10px 18px color-mix(in srgb, var(--accent) 16%, rgba(0, 117, 222, 0.1));
-  transform: translateY(-1px);
+    0 10px 22px rgba(47, 127, 242, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-.preset-pill.active::before {
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent);
-}
-
-.sr-only {
+.preset-check {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  color: #2f7ff2;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(47, 127, 242, 0.4);
+  z-index: 2;
 }
 
 .play-canvas-shell {
@@ -265,7 +386,9 @@ const difficultyOptions = [
   border: none;
   border-radius: 22px;
   background: transparent;
-  box-shadow: none;
+  box-shadow:
+    0 30px 80px rgba(41, 121, 196, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.4);
   backdrop-filter: none;
   width: 100%;
   height: 100%;
@@ -279,16 +402,15 @@ const difficultyOptions = [
 
 @media (max-width: 859px) {
   .page.page-play {
-    width: 100%;
-    height: 100dvh;
+    width: min(100%, calc(100% - 12px));
+    min-height: 100dvh;
+    padding: 10px 0 14px;
   }
 
   .play-grid {
-    --play-canvas-width: min(calc(100dvw - 16px), calc((100dvh - 172px) / 1.5));
-  }
-
-  .play-topbar {
-    top: calc(50% - (var(--play-canvas-width) * 0.75) - 70px);
+    --play-canvas-width: min(calc(100dvw - 12px), calc((100dvh - 110px) / 1.5));
+    max-width: 100%;
+    gap: 12px;
   }
 
   .canvas-shell {
@@ -306,18 +428,6 @@ const difficultyOptions = [
     height: 50px;
     min-height: 50px;
     border-radius: 14px;
-  }
-
-  .preset-pill::before,
-  .preset-pill::after {
-    inset: 4px;
-    border-radius: 10px;
-  }
-
-  .play-floating-actions {
-    right: 8px;
-    top: 8px;
-    gap: 8px;
   }
 
   .circle-action {

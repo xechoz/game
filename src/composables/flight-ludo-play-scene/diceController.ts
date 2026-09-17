@@ -1,5 +1,14 @@
+/**
+ * 骰子控制器（diceController）
+ *
+ * 职责：
+ *  - 摇骰流程编排：旋转动画（startDiceSpin）→ 落定弹跳（startDiceLandingAnimation）→ 调用规则层 rollDice
+ *  - 骰子空闲时的呼吸/涟漪动画（syncDiceIdleAnimation）
+ *  - 通过一组 ref 把动画状态暴露给渲染层（diceSpinScale / diceLandingLift / ...）
+ *
+ * 交互入口 handleRoll 同时服务真人点击与自动托管（fromAuto）。
+ */
 import { ref, type Ref } from 'vue'
-import type * as PIXI from 'pixi.js'
 
 import { rollDice, type GameState } from '../../game'
 import type { Point, RefreshGameView } from './types'
@@ -14,16 +23,18 @@ type DiceControllerOptions = {
   isHumanTurn: () => boolean
   clearTimers: () => void
   renderScene: () => void
+  syncDiceScene: () => void
   refreshGameView: RefreshGameView
   scheduleAutoTurn: (delay?: number) => void
   scheduleAutoMove: (action: () => void, delay: number) => void
   scheduleTurnAdvance: (delay?: number) => void
-  getHumanAutoMovePieceId: () => string | null
+  getHumanAutoMovePieceId: () => string
   handleMove: (pieceId: string) => void
   playRollSound: () => void
 }
 
 export function createDiceController(options: DiceControllerOptions) {
+  // —— 骰子动画状态（渲染层读取）——
   const rollingFace = ref<number>(1)
   const diceRollFrame = ref(0)
   const diceSpinScale = ref(1)
@@ -33,53 +44,36 @@ export function createDiceController(options: DiceControllerOptions) {
   const diceLandingSquash = ref(0)
   const diceResultPop = ref(0)
   const diceIdlePulse = ref(0)
-  const diceIdleShake = ref(0)
-  const diceIdleLift = ref(0)
+  const idleRipple = ref(0)
   const isRolling = ref(false)
 
-  let diceFaceTextures: Partial<Record<number, PIXI.Texture>> = {}
-  let diceIdleTexture: PIXI.Texture | null = null
-  let diceRollTextures: PIXI.Texture[] = []
-  let rollTimer: number | null = null
-  let rollFrameId: number | null = null
-  let diceLandingFrameId: number | null = null
-  let diceIdleFrameId: number | null = null
+  let rollTimer: number = -1
+  let rollFrameId: number = -1
+  let diceLandingFrameId: number = -1
+  let diceIdleFrameId: number = -1
   let diceIdleLastRender = 0
   let diceIdleStart = 0
 
-  function setDiceAssets(
-    idleTexture: PIXI.Texture | null,
-    faceTextures: Partial<Record<number, PIXI.Texture>>,
-    rollTextures: PIXI.Texture[],
-  ) {
-    diceIdleTexture = idleTexture
-    diceFaceTextures = faceTextures
-    diceRollTextures = rollTextures
-  }
-
-  function getDiceIdleTexture() {
-    return diceIdleTexture
-  }
-
   function clearRollTimers() {
-    if (rollTimer !== null) {
+    if (rollTimer !== -1) {
       window.clearTimeout(rollTimer)
-      rollTimer = null
+      rollTimer = -1
     }
-    if (rollFrameId !== null) {
+    if (rollFrameId !== -1) {
       window.cancelAnimationFrame(rollFrameId)
-      rollFrameId = null
+      rollFrameId = -1
     }
   }
 
+  // 停止并复位所有骰子动画状态
   function stopDiceIdleAnimation() {
-    if (diceIdleFrameId !== null) {
+    if (diceIdleFrameId !== -1) {
       window.cancelAnimationFrame(diceIdleFrameId)
-      diceIdleFrameId = null
+      diceIdleFrameId = -1
     }
-    if (diceLandingFrameId !== null) {
+    if (diceLandingFrameId !== -1) {
       window.cancelAnimationFrame(diceLandingFrameId)
-      diceLandingFrameId = null
+      diceLandingFrameId = -1
     }
     diceIdleLastRender = 0
     diceSpinRotation.value = 0
@@ -88,8 +82,7 @@ export function createDiceController(options: DiceControllerOptions) {
     diceLandingSquash.value = 0
     diceResultPop.value = 0
     diceIdlePulse.value = 0
-    diceIdleShake.value = 0
-    diceIdleLift.value = 0
+    idleRipple.value = 0
   }
 
   function resetDiceState() {
@@ -100,43 +93,20 @@ export function createDiceController(options: DiceControllerOptions) {
     rollingFace.value = 1
   }
 
+  // 展示给玩家看的点数：摇骰中显示正在转的随机面，落定后显示规则层的真实结果
   function getDiceDisplayValue() {
     if (isRolling.value) return rollingFace.value
     return options.game.value.dice
   }
 
-  function getDiceFaceAssetTexture(value: number | null) {
-    if (value === null) return null
-    return diceFaceTextures[value] ?? null
-  }
-
-  function getRollingDiceAssetTexture() {
-    if (!isRolling.value) return null
-    if (diceRollTextures.length > 0) {
-      return (
-        diceRollTextures[diceRollFrame.value] ??
-        diceRollTextures[diceRollTextures.length - 1] ??
-        null
-      )
-    }
-    return getDiceFaceAssetTexture(rollingFace.value)
-  }
-
-  function getIdleDiceAssetTexture() {
-    return (
-      getDiceFaceAssetTexture(
-        options.game.value.dice ?? rollingFace.value ?? 1,
-      ) ?? getDiceFaceAssetTexture(1)
-    )
-  }
-
+  // 骰子空闲动画：等待摇骰时做呼吸脉冲 + 涟漪扩散（80ms 节流重渲染）
   function syncDiceIdleAnimation() {
     stopDiceIdleAnimation()
 
     const shouldAnimate =
       options.isPlayPageActive() &&
-      options.game.value.winnerIndex === null &&
-      options.game.value.dice === null &&
+      options.game.value.winnerIndex === -1 &&
+      options.game.value.dice === 0 &&
       !isRolling.value &&
       options.movingPoint.value === null &&
       !options.diceHandoffHiding.value &&
@@ -149,8 +119,8 @@ export function createDiceController(options: DiceControllerOptions) {
     const tick = (now: number) => {
       if (
         !options.isPlayPageActive() ||
-        options.game.value.winnerIndex !== null ||
-        options.game.value.dice !== null ||
+        options.game.value.winnerIndex !== -1 ||
+        options.game.value.dice !== 0 ||
         isRolling.value ||
         options.movingPoint.value !== null ||
         options.diceHandoffHiding.value ||
@@ -163,9 +133,8 @@ export function createDiceController(options: DiceControllerOptions) {
 
       if (diceIdleLastRender === 0 || now - diceIdleLastRender >= 80) {
         const elapsed = now - diceIdleStart
-        diceIdleShake.value = Math.sin(elapsed / 140)
-        diceIdleLift.value = Math.sin(elapsed / 320) * 2.6
         diceIdlePulse.value = 0.5 + 0.5 * Math.sin(elapsed / 240)
+        idleRipple.value = (elapsed % 1500) / 1500
         diceIdleLastRender = now
         options.renderScene()
       }
@@ -176,10 +145,11 @@ export function createDiceController(options: DiceControllerOptions) {
     diceIdleFrameId = window.requestAnimationFrame(tick)
   }
 
+  // 骰子落定弹跳：420ms 内做 bounce/rebound/压扁/弹出 的组合动画，结束后复位
   function startDiceLandingAnimation() {
-    if (diceLandingFrameId !== null) {
+    if (diceLandingFrameId !== -1) {
       window.cancelAnimationFrame(diceLandingFrameId)
-      diceLandingFrameId = null
+      diceLandingFrameId = -1
     }
 
     const startTime = performance.now()
@@ -196,22 +166,23 @@ export function createDiceController(options: DiceControllerOptions) {
         0,
         Math.sin(progress * Math.PI * 1.35) * (1 - progress * 0.42),
       )
-      options.renderScene()
+      options.syncDiceScene()
 
       if (progress < 1) {
         diceLandingFrameId = window.requestAnimationFrame(animate)
       } else {
-        diceLandingFrameId = null
+        diceLandingFrameId = -1
         diceLandingLift.value = 0
         diceLandingSquash.value = 0
         diceResultPop.value = 0
-        options.renderScene()
+        options.syncDiceScene()
       }
     }
 
     diceLandingFrameId = window.requestAnimationFrame(animate)
   }
 
+  // 摇骰旋转动画：约 1.1s，点数随机切换 + 旋转/缩放/翻转抖动，结束时复位并触发规则判定
   function startDiceSpin() {
     const startTime = performance.now()
     let lastTick = 0
@@ -233,34 +204,32 @@ export function createDiceController(options: DiceControllerOptions) {
         turnProgress * Math.PI * 0.1
       diceSpinFlip.value =
         0.46 + Math.abs(Math.cos(progress * Math.PI * 6.8)) * 0.54
-      if (diceRollTextures.length > 0) {
-        diceRollFrame.value = Math.min(
-          diceRollTextures.length - 1,
-          Math.floor(progress * diceRollTextures.length),
-        )
-      }
-      options.renderScene()
+      options.syncDiceScene()
       if (progress < 1) {
         rollFrameId = window.requestAnimationFrame(spin)
       } else {
-        rollFrameId = null
+        rollFrameId = -1
         diceSpinScale.value = 1
         diceSpinRotation.value = 0
         diceSpinFlip.value = 1
-        if (diceRollTextures.length > 0) {
-          diceRollFrame.value = Math.max(0, diceRollTextures.length - 1)
-        }
-        options.renderScene()
+        options.syncDiceScene()
       }
     }
 
     rollFrameId = window.requestAnimationFrame(spin)
   }
 
+  /**
+   * 摇骰交互入口（真人点击 / 自动托管均可触发，托管需 fromAuto=true）。
+   * 流程：守卫校验 → 旋转动画 → 随机面切换 6 次 → 调规则层 rollDice
+   *  → 落定动画 → 按结果分派：
+   *     skipped（无子可走，已自动过回合）/ 可直接代走（getHumanAutoMovePieceId）
+   *     / advancePending（安排回合推进）/ 托管继续摇下一位
+   */
   function handleRoll(fromAuto = false) {
     if (
-      options.game.value.winnerIndex !== null ||
-      options.game.value.dice !== null ||
+      options.game.value.winnerIndex !== -1 ||
+      options.game.value.dice !== 0 ||
       isRolling.value ||
       options.isTurnTransitioning.value ||
       options.movingPoint.value !== null
@@ -288,7 +257,7 @@ export function createDiceController(options: DiceControllerOptions) {
       }
 
       isRolling.value = false
-      rollTimer = null
+      rollTimer = -1
       const result = rollDice(options.game.value)
       if (!result.rolled) return
 
@@ -305,7 +274,7 @@ export function createDiceController(options: DiceControllerOptions) {
 
       const humanAutoPieceId = options.isHumanTurn()
         ? options.getHumanAutoMovePieceId()
-        : null
+        : ''
       if (humanAutoPieceId) {
         options.scheduleAutoMove(
           () => options.handleMove(humanAutoPieceId),
@@ -336,15 +305,9 @@ export function createDiceController(options: DiceControllerOptions) {
     diceLandingSquash,
     diceResultPop,
     diceIdlePulse,
-    diceIdleShake,
-    diceIdleLift,
+    idleRipple,
     isRolling,
-    setDiceAssets,
-    getDiceIdleTexture,
     getDiceDisplayValue,
-    getDiceFaceAssetTexture,
-    getRollingDiceAssetTexture,
-    getIdleDiceAssetTexture,
     clearRollTimers,
     stopDiceIdleAnimation,
     resetDiceState,

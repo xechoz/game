@@ -5,6 +5,12 @@ export type Point = {
 
 export type BoardLayout = {
   trackPoints: Point[]
+  outerBorderPoints: Point[]
+  topBorderPoints: Point[]
+  rightBorderPoints: Point[]
+  bottomBorderPoints: Point[]
+  leftBorderPoints: Point[]
+  homeEntryPoints: Point[]
   baseSlots: Point[][]
   finishSlots: Point[][]
 }

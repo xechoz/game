@@ -1,26 +1,49 @@
 <script setup lang="ts">
+/**
+ * 应用根组件：页面路由（prepare → play → result）
+ *
+ * - 维护全局配置（mode / piecesPerPlayer / boardPresetId / autoPlayMode）
+ * - 通过 v-if 在三个页面组件间切换；play 与 result 使用 defineAsyncComponent 懒加载
+ * - PlayPage 复用同一份场景（result 页叠加在其上），保证背后棋盘不闪烁
+ */
 import { defineAsyncComponent, ref } from 'vue'
 
 import PrepareScreen from './components/game/PrepareScreen.vue'
 import { type AppPage } from './composables/useFlightLudoPlayScene'
-import { type BoardPresetId, type GameMode } from './game'
+import {
+  BOARD_PRESETS,
+  DEFAULT_BOARD_PRESET_ID,
+  type BoardPresetId,
+  type GameMode,
+} from './game'
 
-const assetBase = import.meta.env.BASE_URL
-const appBg = `${assetBase}prepare-bg.jpg`
+const presetStorageKey = 'flightLudo.boardPreset'
 
+function loadSavedPreset(): BoardPresetId {
+  const saved = localStorage.getItem(presetStorageKey)
+  if (saved && saved in BOARD_PRESETS) {
+    return saved as BoardPresetId
+  }
+  return DEFAULT_BOARD_PRESET_ID
+}
+
+// 懒加载（分包）：PlayScreen.Content 与 ResultScreen 只在实际进入时下载
 const loadResultScreen = () => import('./components/game/ResultScreen.vue')
-const loadPlayPage = () => import('./components/game/PlayPage.vue')
+const loadPlayPage = () => import('./components/game/PlayScreen.Content.vue')
 
 const ResultScreen = defineAsyncComponent(loadResultScreen)
 const PlayPage = defineAsyncComponent(loadPlayPage)
 
+// 全局配置与页面状态
 const mode = ref<GameMode>(1)
 const piecesPerPlayer = ref(4)
-const boardPresetId = ref<BoardPresetId>('tiny-4')
+const boardPresetId = ref<BoardPresetId>(loadSavedPreset())
 const page = ref<AppPage>('prepare')
 const autoPlayMode = ref(true)
-const winnerName = ref('已结束')
+const winnerName = ref('')
+const winnerIndex = ref(0)
 
+// 准备页点击开始：预加载 play 分包后再切页，避免白屏
 async function startGame() {
   await loadPlayPage()
   page.value = 'play'
@@ -30,6 +53,7 @@ function goToPrepare() {
   page.value = 'prepare'
 }
 
+// 结果页"再玩一次"：直接切回 play（复用已就绪的 PIXI 场景，内部会重开一局）
 function replayGame() {
   page.value = 'play'
 }
@@ -44,18 +68,23 @@ function setPiecesPerPlayer(nextCount: number) {
 
 function setBoardPresetId(nextBoardPresetId: BoardPresetId) {
   boardPresetId.value = nextBoardPresetId
+  localStorage.setItem(presetStorageKey, nextBoardPresetId)
 }
 
-function handleWinnerChange(nextWinnerName: string) {
-  winnerName.value = nextWinnerName
+// 对局出现胜利者：记录获胜信息并切到结果页
+function handleWinnerChange(nextWinner: {
+  name: string
+  color: string
+  index: number
+}) {
+  winnerName.value = nextWinner.name
+  winnerIndex.value = nextWinner.index
   page.value = 'result'
 }
 </script>
 
 <template>
   <main class="shell">
-    <img class="app-bg" :src="appBg" alt="" aria-hidden="true" />
-
     <PrepareScreen
       v-if="page === 'prepare'"
       :mode="mode"
@@ -66,7 +95,7 @@ function handleWinnerChange(nextWinnerName: string) {
     />
 
     <PlayPage
-      v-else-if="page === 'play'"
+      v-else-if="page === 'play' || page === 'result'"
       :mode="mode"
       :pieces-per-player="piecesPerPlayer"
       :board-preset-id="boardPresetId"
@@ -77,8 +106,9 @@ function handleWinnerChange(nextWinnerName: string) {
     />
 
     <ResultScreen
-      v-else
+      v-if="page === 'result'"
       :winner-name="winnerName"
+      :winner-index="winnerIndex"
       @replay="replayGame"
       @prepare="goToPrepare"
     />
@@ -92,18 +122,125 @@ function handleWinnerChange(nextWinnerName: string) {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background: none;
+  background: linear-gradient(
+    180deg,
+    #57b7ff 0%,
+    #8bd2ff 45%,
+    #b9e4ff 72%,
+    #fff1cf 100%
+  );
 }
 
-.app-bg {
+.shell::before {
+  content: '';
   position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: blur(14px);
-  transform: scale(1.04);
-  z-index: -2;
+  z-index: -1;
   pointer-events: none;
+  background:
+    radial-gradient(
+      circle 280px at 80% 8%,
+      rgba(255, 224, 130, 0.55),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle 380px at 10% 14%,
+      rgba(239, 68, 68, 0.15),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle 420px at 92% 26%,
+      rgba(245, 158, 11, 0.16),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle 440px at 8% 88%,
+      rgba(59, 130, 246, 0.18),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle 460px at 92% 86%,
+      rgba(34, 197, 94, 0.15),
+      transparent 70%
+    );
+}
+
+.shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      ellipse 300px 70px at 14% 16%,
+      rgba(255, 255, 255, 0.72),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 200px 55px at 24% 19%,
+      rgba(255, 255, 255, 0.5),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 340px 80px at 78% 30%,
+      rgba(255, 255, 255, 0.6),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 220px 60px at 68% 33%,
+      rgba(255, 255, 255, 0.42),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 260px 65px at 42% 72%,
+      rgba(255, 255, 255, 0.38),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 420px 90px at 12% 84%,
+      rgba(255, 255, 255, 0.4),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 300px 75px at 88% 66%,
+      rgba(255, 255, 255, 0.34),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 220px 60px at 52% 40%,
+      rgba(255, 255, 255, 0.3),
+      transparent 70%
+    );
+  box-shadow:
+    160px 200px 0 0 rgba(255, 255, 255, 0.8),
+    420px 140px 0 1px rgba(255, 255, 255, 0.7),
+    640px 260px 0 0 rgba(255, 255, 255, 0.75),
+    880px 120px 0 0 rgba(255, 255, 255, 0.7),
+    1100px 340px 0 1px rgba(255, 255, 255, 0.8),
+    1340px 200px 0 0 rgba(255, 255, 255, 0.72),
+    1560px 400px 0 0 rgba(255, 255, 255, 0.66),
+    1800px 260px 0 1px rgba(255, 255, 255, 0.78),
+    240px 560px 0 0 rgba(255, 255, 255, 0.6),
+    760px 620px 0 0 rgba(255, 255, 255, 0.65),
+    1280px 720px 0 0 rgba(255, 255, 255, 0.7),
+    1720px 560px 0 1px rgba(255, 255, 255, 0.75);
+  animation: shell-breathe 8s ease-in-out infinite alternate;
+}
+
+@keyframes shell-breathe {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell::after {
+    animation: none;
+    opacity: 0.85;
+  }
 }
 </style>

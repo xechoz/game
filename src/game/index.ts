@@ -1,3 +1,9 @@
+/**
+ * src/game 桶导出（barrel）
+ *
+ * 对外只暴露纯逻辑 API：棋盘预设 + 飞行棋规则状态机。
+ * 渲染层 / 控制器 / Vue 组件统一从这里 import，避免依赖内部文件路径。
+ */
 export * from './board-presets'
 
 export {

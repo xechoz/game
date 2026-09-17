@@ -1,14 +1,37 @@
-import { DEFAULT_BOARD_PRESET_ID, getBoardPreset, type BoardPreset, type BoardPresetId } from './board-presets.ts'
+/**
+ * 飞行棋核心规则（纯逻辑层，不依赖 Vue / PixiJS）
+ *
+ * 本文件是整个游戏的状态机：
+ *  - GameState 是唯一数据源，渲染层与控制器只读写它
+ *  - 所有规则函数都是纯函数式修改 state（直接就地修改并返回结果信息）
+ *  - 棋盘几何（格子数、安全格、跳子点）由 board-presets.ts 的 BoardPreset 提供
+ *
+ * 坐标模型：
+ *  - 每个棋子的 progress 表示"从起点出发走了几步"
+ *  - progress <= 0          → 在停机坪（base），只有掷出 6 才能起飞
+ *  - 1 ~ trackLength        → 在外圈跑道（track）
+ *  - trackLength+1 ~ finish → 进入终点跑道（home），不再与外圈交互
+ *  - progress >= finishStep → 到达终点（finished）
+ */
+import { t } from '../i18n'
+import {
+  DEFAULT_BOARD_PRESET_ID,
+  getBoardPreset,
+  type BoardPreset,
+  type BoardPresetId,
+} from './board-presets.ts'
 
 const activeBoardPreset = getBoardPreset()
 
-export const TRACK_STEPS_PER_SIDE = activeBoardPreset.stepsPerSide
+export const TRACK_STEPS_PER_SIDE = activeBoardPreset.stepsPerEdge
 export const TRACK_LENGTH = activeBoardPreset.trackLength
 export const HOME_STEPS = activeBoardPreset.homeSteps
-export const FINISH_STEP = TRACK_LENGTH + HOME_STEPS
+export const HOME_ENTRY_STEP = TRACK_LENGTH
+export const FINISH_STEP = HOME_ENTRY_STEP + HOME_STEPS
 
 export type GameMode = 1 | 2 | 3 | 4
 
+// 玩家棋子当前所处区域：停机坪 / 外圈跑道 / 终点跑道 / 已到达终点
 export type PieceLocation = 'base' | 'track' | 'home' | 'finished'
 
 export interface GameSettings {
@@ -20,11 +43,13 @@ export interface GameSettings {
 export interface PieceState {
   id: string
   progress: number
+  finished: boolean
 }
 
+// 玩家静态元信息（与对局无关的常量属性）
 export interface PlayerMeta {
   index: number
-  name: string
+  name: 'red' | 'yellow' | 'blue' | 'green'
   color: string
   startIndex: number
   corner: string
@@ -37,6 +62,7 @@ export interface PlayerState extends PlayerMeta {
   pieces: PieceState[]
 }
 
+// 一局游戏的完整状态（唯一数据源）
 export interface GameState {
   mode: GameMode
   piecesPerPlayer: number
@@ -45,21 +71,24 @@ export interface GameState {
   turnOrder: number[]
   turnPointer: number
   currentPlayerIndex: number
-  dice: number | null
+  dice: number
   status: string
-  winnerIndex: number | null
+  winnerIndex: number
   turnCount: number
+  legalPieceIds: string[]
 }
 
-function createPlayerDefs(boardPresetId: BoardPresetId): PlayerMeta[] {
-  const boardPreset = getBoardPreset(boardPresetId)
-
-  return [
-    { index: 0, name: '红方', color: '#ef4444', startIndex: boardPreset.startIndices[0], corner: '左上', boardPresetId },
-    { index: 1, name: '黄方', color: '#f59e0b', startIndex: boardPreset.startIndices[1], corner: '右上', boardPresetId },
-    { index: 2, name: '蓝方', color: '#3b82f6', startIndex: boardPreset.startIndices[2], corner: '右下', boardPresetId },
-    { index: 3, name: '绿方', color: '#22c55e', startIndex: boardPreset.startIndices[3], corner: '左下', boardPresetId },
-  ]
+// movePiece 的结果信息：
+//  - advancePending: 是否需要在展示后推进回合（掷出 6 / 吃子可继续走时不推进）
+//  - victory:        是否因此次移动获胜
+//  - capturedCount / capturedPieceIds: 吃掉的敌方棋子
+export interface MoveResult {
+  moved: boolean
+  advancePending: boolean
+  victory: boolean
+  capturedCount: number
+  capturedPieceIds: string[]
+  message: string
 }
 
 function getPresetId(boardPresetId?: BoardPresetId): BoardPresetId {
@@ -70,28 +99,112 @@ function getPresetForId(boardPresetId?: BoardPresetId): BoardPreset {
   return getBoardPreset(getPresetId(boardPresetId))
 }
 
-function getPresetForState(state: Pick<GameState, 'boardPresetId'>): BoardPreset {
+function getPresetForState(
+  state: Pick<GameState, 'boardPresetId'>,
+): BoardPreset {
   return getPresetForId(state.boardPresetId)
 }
 
-function getPresetForPlayer(player: Pick<PlayerState, 'boardPresetId'>): BoardPreset {
+function getPresetForPlayer(
+  player: Pick<PlayerState, 'boardPresetId'>,
+): BoardPreset {
   return getPresetForId(player.boardPresetId)
 }
 
-export const PLAYER_DEFS: PlayerMeta[] = createPlayerDefs(activeBoardPreset.id)
-export const SAFE_CELLS = new Set(activeBoardPreset.safeCells)
-export const FLIGHT_JUMPS = new Map<number, number>(activeBoardPreset.flightJumps)
+// 把外圈轨道等分成四段，作为四名玩家的起跑线下标（0/1/2/3 分别对应 红/黄/蓝/绿）
+function deriveQuarterIndices(
+  trackLength: number,
+): [number, number, number, number] {
+  return [
+    0,
+    Math.floor(trackLength / 4),
+    Math.floor(trackLength / 2),
+    Math.floor((trackLength * 3) / 4),
+  ]
+}
 
+// 根据棋盘预设生成四名玩家的静态定义（颜色、起跑位置、所在角落）
+function createPlayerDefs(boardPresetId: BoardPresetId): PlayerMeta[] {
+  const boardPreset = getBoardPreset(boardPresetId)
+  const startIndices = deriveQuarterIndices(boardPreset.trackLength)
+
+  return [
+    {
+      index: 0,
+      name: 'red',
+      color: '#ef4444',
+      startIndex: startIndices[0],
+      corner: '左上',
+      boardPresetId,
+    },
+    {
+      index: 1,
+      name: 'yellow',
+      color: '#f59e0b',
+      startIndex: startIndices[1],
+      corner: '右上',
+      boardPresetId,
+    },
+    {
+      index: 2,
+      name: 'blue',
+      color: '#3b82f6',
+      startIndex: startIndices[2],
+      corner: '右下',
+      boardPresetId,
+    },
+    {
+      index: 3,
+      name: 'green',
+      color: '#22c55e',
+      startIndex: startIndices[3],
+      corner: '左下',
+      boardPresetId,
+    },
+  ]
+}
+
+function getPlayerDisplayName(player: Pick<PlayerMeta, 'name'>): string {
+  switch (player.name) {
+    case 'red':
+      return t('redPlayer')
+    case 'yellow':
+      return t('yellowPlayer')
+    case 'blue':
+      return t('bluePlayer')
+    case 'green':
+      return t('greenPlayer')
+    default:
+      return player.name
+  }
+}
+
+export const PLAYER_DEFS: PlayerMeta[] = createPlayerDefs(activeBoardPreset.id)
+export const SAFE_CELLS = activeBoardPreset.safeCells
+export const FLIGHT_JUMPS = new Map<number, number>(
+  activeBoardPreset.flightJumps,
+)
+
+// 回合顺序：目前固定为 0→1→2→3（mode 字段保留用于未来扩展规则）
 export function getTurnOrder(mode: GameMode): number[] {
   void mode
   return [0, 1, 2, 3]
 }
 
+// 每名玩家的棋子数量限制在 1~4 之间
 export function clampPiecesPerPlayer(value: number): number {
   return Math.min(4, Math.max(1, Math.trunc(value) || 1))
 }
 
-export function getWeightedDiceRoll(trackPieceCount: number, randomValue = Math.random()): number {
+/**
+ * 加权骰子：当某玩家还没有棋子上跑道时（trackPieceCount === 0），
+ * 掷出 6 的概率提升到 50%，避免一直掷不到 6 而无法起飞；
+ * 一旦有棋子在跑道上，就恢复均匀随机 1~6。
+ */
+export function getWeightedDiceRoll(
+  trackPieceCount: number,
+  randomValue = Math.random(),
+): number {
   if (trackPieceCount <= 0) {
     if (randomValue < 0.5) return 6
     return Math.floor((randomValue - 0.5) / (0.5 / 5)) + 1
@@ -100,6 +213,7 @@ export function getWeightedDiceRoll(trackPieceCount: number, randomValue = Math.
   return Math.floor(randomValue * 6) + 1
 }
 
+// 根据配置创建一局全新游戏：生成玩家、棋子（progress=0 均在停机坪）、重置回合指针
 export function createGame(settings: GameSettings): GameState {
   const mode = settings.mode
   const piecesPerPlayer = clampPiecesPerPlayer(settings.piecesPerPlayer)
@@ -107,13 +221,15 @@ export function createGame(settings: GameSettings): GameState {
   const playerDefs = createPlayerDefs(boardPresetId)
   const turnOrder = getTurnOrder(mode)
 
+  // humanControlled: 前 mode 个玩家是真人，其余由自动托管控制
   const players = playerDefs.map((player) => ({
     ...player,
     active: true,
     humanControlled: player.index < mode,
     pieces: Array.from({ length: piecesPerPlayer }, (_, pieceIndex) => ({
       id: `${player.index}-${pieceIndex}`,
-      progress: -1,
+      progress: 0,
+      finished: false,
     })),
   }))
 
@@ -124,62 +240,89 @@ export function createGame(settings: GameSettings): GameState {
     players,
     turnOrder,
     turnPointer: 0,
-    currentPlayerIndex: turnOrder[0],
-    dice: null,
-    status: '点击“掷骰子”开始；掷出 6 才能把棋子从基地放到起点。',
-    winnerIndex: null,
+    currentPlayerIndex: turnOrder[0] ?? 0,
+    dice: 0,
+    status: t('beginGame'),
+    winnerIndex: -1,
     turnCount: 1,
+    legalPieceIds: [],
   }
 }
 
 export function getCurrentPlayer(state: GameState): PlayerState {
-  return state.players[state.currentPlayerIndex]
+  return state.players[state.currentPlayerIndex] ?? state.players[0]!
 }
 
-export function getPieceLocation(player: PlayerState, piece: PieceState): PieceLocation {
+// 根据 progress 判断棋子所处区域（base/track/home/finished）
+export function getPieceLocation(
+  player: PlayerState,
+  piece: PieceState,
+): PieceLocation {
   const boardPreset = getPresetForPlayer(player)
   const finishStep = boardPreset.trackLength + boardPreset.homeSteps
 
-  if (piece.progress < 0) return 'base'
-  if (piece.progress < boardPreset.trackLength) return 'track'
+  if (piece.progress <= 0) return 'base'
+  if (piece.progress <= boardPreset.trackLength) return 'track'
   if (piece.progress < finishStep) return 'home'
   return 'finished'
 }
 
-export function getTrackCellIndex(player: PlayerState, piece: PieceState): number | null {
+// 把棋子在外圈的 progress 换算成全局跑道格子下标（0 起，用于查找跳子点/安全格）
+export function getTrackCellIndex(
+  player: Pick<PlayerState, 'startIndex' | 'boardPresetId'>,
+  piece: Pick<PieceState, 'progress'>,
+): number {
   const boardPreset = getPresetForPlayer(player)
-
-  if (piece.progress < 0 || piece.progress >= boardPreset.trackLength) return null
-  return (player.startIndex + piece.progress) % boardPreset.trackLength
+  if (piece.progress <= 0 || piece.progress > boardPreset.trackLength) return -1
+  return (player.startIndex + piece.progress - 1) % boardPreset.trackLength
 }
 
-export function getHomeLaneIndex(piece: PieceState, boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID): number | null {
+// 棋子进入终点跑道后，返回其在跑道内的槽位下标（0 起）；不在跑道内返回 -1
+export function getHomeLaneIndex(
+  piece: PieceState,
+  boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID,
+): number {
   const boardPreset = getPresetForId(boardPresetId)
-  const finishStep = boardPreset.trackLength + boardPreset.homeSteps
-
-  if (piece.progress < boardPreset.trackLength || piece.progress >= finishStep) return null
-  return piece.progress - boardPreset.trackLength
+  if (
+    piece.progress <= boardPreset.trackLength ||
+    piece.progress >= boardPreset.trackLength + boardPreset.homeSteps
+  )
+    return -1
+  return piece.progress - boardPreset.trackLength - 1
 }
 
+// 规则判定：当前骰子点数下，这颗棋子能否移动
+//  - 停机坪棋子：必须掷出 6 才能起飞
+//  - 跑道/终点跑道棋子：步数不能越过终点
 function canPieceMove(state: GameState, piece: PieceState): boolean {
   const boardPreset = getPresetForState(state)
   const finishStep = boardPreset.trackLength + boardPreset.homeSteps
 
-  if (state.dice === null || state.winnerIndex !== null) return false
-  if (piece.progress < 0) return state.dice === 6
+  if (state.dice <= 0 || state.winnerIndex !== -1 || piece.finished)
+    return false
+  if (piece.progress <= 0) return state.dice === 6
   return piece.progress + state.dice <= finishStep
 }
 
-export function buildMoveTrajectory(player: PlayerState, piece: PieceState, dice: number): number[] {
+/**
+ * 计算一次移动的完整"轨迹"（progress 序列），供移动动画逐帧回放。
+ * 轨迹中可能包含跳子点：落到带跳子映射的格子后，会直接顺移到目标格。
+ * 停机坪起飞（掷出 6）时轨迹为 [1]。
+ */
+export function buildMoveTrajectory(
+  player: PlayerState,
+  piece: PieceState,
+  dice: number,
+): number[] {
   const boardPreset = getPresetForPlayer(player)
   const finishStep = boardPreset.trackLength + boardPreset.homeSteps
   const flightJumps = new Map<number, number>(boardPreset.flightJumps)
   const steps: number[] = []
   let progress = piece.progress
 
-  if (progress < 0) {
+  if (progress <= 0) {
     if (dice !== 6) return steps
-    progress = 0
+    progress = 1
     steps.push(progress)
     return steps
   }
@@ -189,12 +332,11 @@ export function buildMoveTrajectory(player: PlayerState, piece: PieceState, dice
     progress += 1
     steps.push(progress)
 
-    while (progress >= 0 && progress < boardPreset.trackLength) {
-      const tempPiece = { id: piece.id, progress }
-      const landingCell = getTrackCellIndex(player, tempPiece)
-      const jumpTarget = landingCell === null ? undefined : flightJumps.get(landingCell)
-      if (jumpTarget === undefined || landingCell === null) break
-
+    while (progress >= 1 && progress <= boardPreset.trackLength) {
+      const landingCell = getTrackCellIndex(player, { ...piece, progress })
+      if (landingCell < 0) break
+      const jumpTarget = flightJumps.get(landingCell)
+      if (jumpTarget === undefined) break
       progress += jumpTarget - landingCell
       steps.push(progress)
     }
@@ -203,18 +345,23 @@ export function buildMoveTrajectory(player: PlayerState, piece: PieceState, dice
   return steps
 }
 
-export function chooseAutoMovePieceId(state: GameState): string | null {
-  if (state.dice === null || state.winnerIndex !== null) return null
+/**
+ * 自动托管时选择要移动的棋子：
+ * 优先选能走得最远的棋子（终点 progress 最大），
+ * 走同样远时选出发位置更靠前的，保证托管行为可预期。
+ */
+export function chooseAutoMovePieceId(state: GameState): string {
+  if (state.dice <= 0 || state.winnerIndex !== -1) return ''
 
   const player = getCurrentPlayer(state)
   const candidates = player.pieces
     .filter((piece) => canPieceMove(state, piece))
     .map((piece) => ({
       piece,
-      trajectory: buildMoveTrajectory(player, piece, state.dice as number),
+      trajectory: buildMoveTrajectory(player, piece, state.dice),
     }))
 
-  if (candidates.length === 0) return null
+  if (candidates.length === 0) return ''
 
   candidates.sort((left, right) => {
     const leftEnd = left.trajectory.at(-1) ?? left.piece.progress
@@ -223,33 +370,70 @@ export function chooseAutoMovePieceId(state: GameState): string | null {
     return left.piece.progress - right.piece.progress
   })
 
-  return candidates[0]?.piece.id ?? null
+  return candidates[0]?.piece.id ?? ''
 }
 
+// 返回当前玩家所有可以合法移动的棋子 id（无人机时为空数组）
 export function getLegalPieceIds(state: GameState): string[] {
-  if (state.dice === null || state.winnerIndex !== null) return []
+  if (state.dice <= 0 || state.winnerIndex !== -1) return []
 
   const player = getCurrentPlayer(state)
-  return player.pieces.filter((piece) => canPieceMove(state, piece)).map((piece) => piece.id)
+  return player.pieces
+    .filter((piece) => canPieceMove(state, piece))
+    .map((piece) => piece.id)
 }
 
-export function getPieceLabel(piece: PieceState, boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID): string {
+export function getPieceLabel(
+  piece: PieceState,
+  boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID,
+): string {
   const boardPreset = getPresetForId(boardPresetId)
   const finishStep = boardPreset.trackLength + boardPreset.homeSteps
 
-  if (piece.progress < 0) return '基地'
-  if (piece.progress < boardPreset.trackLength) return `赛道 ${piece.progress + 1}/${boardPreset.trackLength}`
-  if (piece.progress < finishStep) return `内圈 ${piece.progress - boardPreset.trackLength + 1}/${boardPreset.homeSteps}`
-  return '已完成'
+  if (piece.progress <= 0) return t('base')
+  if (piece.progress <= boardPreset.trackLength) {
+    return t('track', {
+      progress: piece.progress,
+      trackLength: boardPreset.trackLength,
+    })
+  }
+  if (piece.progress < finishStep) {
+    return t('home', {
+      progress: piece.progress - boardPreset.trackLength,
+      homeSteps: boardPreset.homeSteps,
+    })
+  }
+  return t('completed')
 }
 
-export function rollDice(state: GameState): { rolled: boolean; skipped: boolean; advancePending: boolean; message: string } {
-  if (state.winnerIndex !== null) {
-    return { rolled: false, skipped: false, advancePending: false, message: '游戏已经结束了。' }
+/**
+ * 摇骰入口（规则层）。
+ *  - 掷出点数并写入 state.dice
+ *  - 若当前玩家没有任何合法棋子可走：立即 advanceTurn 跳到下一玩家（skipped=true）
+ *  - 否则等待玩家从 legalPieceIds 中选择棋子移动
+ */
+export function rollDice(state: GameState): {
+  rolled: boolean
+  skipped: boolean
+  advancePending: boolean
+  message: string
+} {
+  if (state.winnerIndex !== -1) {
+    return {
+      rolled: false,
+      skipped: false,
+      advancePending: false,
+      message: t('gameEnded'),
+    }
   }
 
-  if (state.dice !== null) {
-    return { rolled: false, skipped: false, advancePending: false, message: '当前回合已经有骰子结果，先移动棋子。' }
+  if (state.dice !== 0) {
+    return {
+      rolled: false,
+      skipped: false,
+      advancePending: false,
+      message: t('diceAlreadyRolled'),
+    }
   }
 
   const player = getCurrentPlayer(state)
@@ -257,152 +441,277 @@ export function rollDice(state: GameState): { rolled: boolean; skipped: boolean;
   state.dice = getWeightedDiceRoll(trackPieceCount)
 
   const legalPieces = getLegalPieceIds(state)
+  state.legalPieceIds = legalPieces
   if (legalPieces.length === 0) {
     const rolled = state.dice
     advanceTurn(state)
-    state.status = `${player.name} 掷出 ${rolled} 点，但没有可移动棋子，已轮到 ${getCurrentPlayer(state).name}。`
-    return { rolled: true, skipped: true, advancePending: false, message: state.status }
+    state.status = t('playerRollNone', {
+      playerName: getPlayerDisplayName(player),
+      rolled,
+      nextPlayerName: getPlayerDisplayName(getCurrentPlayer(state)),
+    })
+    return {
+      rolled: true,
+      skipped: true,
+      advancePending: false,
+      message: state.status,
+    }
   }
 
-  state.status = `${player.name} 掷出 ${state.dice} 点，请选择一枚可移动棋子。`
-  return { rolled: true, skipped: false, advancePending: false, message: state.status }
+  state.status = t('playerRolledChoosePiece', {
+    playerName: getPlayerDisplayName(player),
+    dice: state.dice,
+  })
+  return {
+    rolled: true,
+    skipped: false,
+    advancePending: false,
+    message: state.status,
+  }
 }
 
+/**
+ * 移动棋子（规则层核心，包含完整规则链）：
+ *  1. 校验（已掷骰 / 未结束 / 棋子属于当前玩家 / 可以移动）
+ *  2. 起飞或前进 dice 步；循环处理跳子点（可能连续跳）
+ *  3. 吃子：落点非安全格时，把该格上所有敌方棋子送回停机坪
+ *  4. 判定胜利：本方全部棋子到达终点
+ *  5. 结算回合：掷出 6 或吃到子 → 不推进回合（可继续走）；否则 advancePending=true
+ */
 export function movePiece(
   state: GameState,
   pieceId: string,
   options: { deferAdvanceTurn?: boolean } = {},
-): { moved: boolean; advancePending: boolean; message: string } {
+): MoveResult {
   void options
 
-  if (state.dice === null) {
-    return { moved: false, advancePending: false, message: '请先掷骰子。' }
+  if (state.dice <= 0) {
+    return {
+      moved: false,
+      advancePending: false,
+      victory: false,
+      capturedCount: 0,
+      capturedPieceIds: [],
+      message: t('moveBeforeRoll'),
+    }
   }
 
-  if (state.winnerIndex !== null) {
-    return { moved: false, advancePending: false, message: '游戏已经结束了。' }
+  if (state.winnerIndex !== -1) {
+    return {
+      moved: false,
+      advancePending: false,
+      victory: false,
+      capturedCount: 0,
+      capturedPieceIds: [],
+      message: t('gameEnded'),
+    }
   }
 
   const boardPreset = getPresetForState(state)
   const finishStep = boardPreset.trackLength + boardPreset.homeSteps
-  const safeCells = new Set(boardPreset.safeCells)
   const flightJumps = new Map<number, number>(boardPreset.flightJumps)
   const player = getCurrentPlayer(state)
   const piece = player.pieces.find((item) => item.id === pieceId)
   if (!piece) {
-    return { moved: false, advancePending: false, message: '只能移动当前玩家的棋子。' }
+    return {
+      moved: false,
+      advancePending: false,
+      victory: false,
+      capturedCount: 0,
+      capturedPieceIds: [],
+      message: t('onlyCurrentPlayerPiece'),
+    }
   }
 
   if (!canPieceMove(state, piece)) {
-    return { moved: false, advancePending: false, message: '这枚棋子当前不能移动。' }
+    return {
+      moved: false,
+      advancePending: false,
+      victory: false,
+      capturedCount: 0,
+      capturedPieceIds: [],
+      message: t('cannotMovePiece'),
+    }
   }
 
   const dice = state.dice
   const rolledSix = dice === 6
 
-  if (piece.progress < 0) {
-    piece.progress = 0
+  // 起飞：停机坪棋子掷到 6 直接落到起点格（progress = 1）；否则前进 dice 步
+  if (piece.progress <= 0) {
+    piece.progress = 1
   } else {
     piece.progress += dice
   }
 
+  // 跳子：落点若是跳子点，沿映射连续顺移，直到落回普通格子或离开外圈
   let jumped = false
-  while (piece.progress >= 0 && piece.progress < boardPreset.trackLength) {
+  while (piece.progress >= 1 && piece.progress <= boardPreset.trackLength) {
     const landingCell = getTrackCellIndex(player, piece)
-    const jumpTarget = landingCell === null ? undefined : flightJumps.get(landingCell)
-    if (jumpTarget === undefined || landingCell === null) break
+    const jumpTarget = flightJumps.get(landingCell)
+    if (jumpTarget === undefined) break
 
     const jumpDelta = jumpTarget - landingCell
     piece.progress += jumpDelta
     jumped = true
   }
 
+  // 吃子：落点在外圈且不是安全格时，同格敌方棋子全部送回停机坪
   let captured = 0
+  const capturedPieceIds: string[] = []
   const landingCell = getTrackCellIndex(player, piece)
 
-  if (piece.progress < boardPreset.trackLength && landingCell !== null && !safeCells.has(landingCell)) {
+  if (
+    piece.progress <= boardPreset.trackLength &&
+    landingCell >= 0 &&
+    !boardPreset.safeCells[player.index].includes(landingCell)
+  ) {
     for (const enemy of state.players) {
       if (!enemy.active || enemy.index === player.index) continue
 
       for (const enemyPiece of enemy.pieces) {
-        if (enemyPiece.progress < 0 || enemyPiece.progress >= boardPreset.trackLength) continue
+        if (
+          enemyPiece.progress <= 0 ||
+          enemyPiece.progress > boardPreset.trackLength
+        )
+          continue
 
         const enemyCell = getTrackCellIndex(enemy, enemyPiece)
         if (enemyCell === landingCell) {
-          enemyPiece.progress = -1
+          enemyPiece.progress = 0
+          enemyPiece.finished = false
           captured += 1
+          capturedPieceIds.push(enemyPiece.id)
         }
       }
     }
   }
 
-  state.dice = null
+  // 消耗骰子点数，本次移动完成
+  state.dice = 0
+  state.legalPieceIds = []
 
-  const finishedCount = player.pieces.filter((item) => item.progress >= finishStep).length
+  // 胜利判定：本方所有棋子都到达终点，并把越界 progress 收敛到 finishStep
+  const finishedCount = player.pieces.filter(
+    (item) => item.progress >= finishStep,
+  ).length
+  player.pieces.forEach((item) => {
+    item.finished = item.progress >= finishStep
+    if (item.finished) item.progress = finishStep
+  })
+
   if (finishedCount === player.pieces.length) {
     state.winnerIndex = player.index
-    state.status = `${player.name} 已完成全部棋子，赢得胜利！`
+    state.status =
+      captured > 0
+        ? t('playerCapturedVictory', {
+            playerName: getPlayerDisplayName(player),
+            captured,
+          })
+        : t('playerVictory', {
+            playerName: getPlayerDisplayName(player),
+          })
     return {
       moved: true,
       advancePending: false,
-      message:
-        captured > 0
-          ? `${player.name} 吃子 ${captured} 枚，并且拿下胜利！`
-          : `${player.name} 获得胜利！`,
+      victory: true,
+      capturedCount: captured,
+      capturedPieceIds,
+      message: state.status,
     }
   }
 
+  // 掷出 6：不推进回合，同一玩家可继续走（advancePending=false）
   if (rolledSix) {
-    state.status = `${player.name} 掷出 6，获得一次额外行动。`
+    state.status =
+      captured > 0
+        ? t('playerCapturedContinue', {
+            playerName: getPlayerDisplayName(player),
+            captured,
+          })
+        : t('playerCanContinue', {
+            playerName: getPlayerDisplayName(player),
+          })
     return {
       moved: true,
       advancePending: false,
-      message:
-        captured > 0
-          ? `${player.name} 吃子 ${captured} 枚，继续本回合。`
-          : `${player.name} 可以继续行动。`,
+      victory: false,
+      capturedCount: captured,
+      capturedPieceIds,
+      message: state.status,
     }
   }
 
-  state.status = captured > 0
-    ? `${player.name} 吃子 ${captured} 枚，2 秒后轮到下一位。`
-    : jumped
-      ? `${player.name} 飞跃前进，2 秒后轮到下一位。`
-      : `${player.name} 走了一步，2 秒后轮到下一位。`
+  // 普通移动：本次走完，需要推进回合到下一玩家
+  state.status =
+    captured > 0
+      ? t('playerCapturedNext', {
+          playerName: getPlayerDisplayName(player),
+          captured,
+        })
+      : jumped
+        ? t('playerFlewNext', {
+            playerName: getPlayerDisplayName(player),
+          })
+        : t('playerMovedNext', {
+            playerName: getPlayerDisplayName(player),
+          })
+
   return {
     moved: true,
     advancePending: true,
+    victory: false,
+    capturedCount: captured,
+    capturedPieceIds,
     message: state.status,
   }
 }
 
+// 回合推进：清空骰子、轮到下一位玩家、回合计数 +1
 export function advanceTurn(state: GameState): void {
-  if (state.winnerIndex !== null) return
+  if (state.winnerIndex !== -1) return
 
-  state.dice = null
+  state.dice = 0
+  state.legalPieceIds = []
   state.turnPointer = (state.turnPointer + 1) % state.turnOrder.length
-  state.currentPlayerIndex = state.turnOrder[state.turnPointer]
+  state.currentPlayerIndex = state.turnOrder[state.turnPointer] ?? 0
   state.turnCount += 1
-  state.status = `${getCurrentPlayer(state).name} 回合，请掷骰子。`
+  state.status = t('nextPlayerRoll', {
+    playerName: getPlayerDisplayName(getCurrentPlayer(state)),
+  })
 }
 
 export function resetGame(settings: GameSettings): GameState {
   return createGame(settings)
 }
 
+// 统计：某玩家已到达终点的棋子数量
 export function getPlayerFinishedCount(player: PlayerState): number {
   const boardPreset = getPresetForPlayer(player)
   const finishStep = boardPreset.trackLength + boardPreset.homeSteps
-
-  return player.pieces.filter((piece) => piece.progress >= finishStep).length
+  return player.pieces.filter(
+    (piece) => piece.progress >= finishStep || piece.finished,
+  ).length
 }
 
+// 统计：某玩家当前在外圈跑道上的棋子数量（用于加权骰子）
 export function getPlayerTrackCount(player: PlayerState): number {
   const boardPreset = getPresetForPlayer(player)
-
-  return player.pieces.filter((piece) => piece.progress >= 0 && piece.progress < boardPreset.trackLength).length
+  return player.pieces.filter(
+    (piece) =>
+      piece.progress >= 1 &&
+      piece.progress <= boardPreset.trackLength &&
+      !piece.finished,
+  ).length
 }
 
-export function isSafeCell(cellIndex: number, boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID): boolean {
-  return getPresetForId(boardPresetId).safeCells.includes(cellIndex)
+// 判断某个跑道格子是否为某玩家的安全格（安全格上不会被吃）
+export function isSafeCell(
+  playerIndex: number,
+  cellIndex: number,
+  boardPresetId: BoardPresetId = DEFAULT_BOARD_PRESET_ID,
+): boolean {
+  return getPresetForId(boardPresetId).safeCells[playerIndex].includes(
+    cellIndex,
+  )
 }
